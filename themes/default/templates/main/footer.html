@@ -1,0 +1,36 @@
+<footer class="bg-dark text-white py-4 mt-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6 text-center text-md-left">
+                <p class="mb-0">&copy; {{ year }} {{ settings.site_title }}. All rights reserved.</p>
+                {% if settings.privacy_page or settings.terms_page %}
+                <p class="mt-2">
+                    {% if settings.privacy_page %}
+                    <a href="/{{ settings.privacy_page }}" class="text-white mr-3">Privacy Policy</a>
+                    {% endif %}
+                    {% if settings.terms_page %}
+                    <a href="/{{ settings.terms_page }}" class="text-white">Terms & Conditions</a>
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
+            
+            {% include "main/contact-form.html" %}
+            
+            <div class="col-md-6 text-center text-md-right">
+                {% if settings.social_links.facebook or settings.social_links.twitter or settings.social_links.instagram %}
+                <p>Follow us:</p>
+                {% if settings.social_links.facebook %}
+                <a href="{{ settings.social_links.facebook }}" class="text-white mr-3" target="_blank">Facebook</a>
+                {% endif %}
+                {% if settings.social_links.twitter %}
+                <a href="{{ settings.social_links.twitter }}" class="text-white mr-3" target="_blank">Twitter</a>
+                {% endif %}
+                {% if settings.social_links.instagram %}
+                <a href="{{ settings.social_links.instagram }}" class="text-white" target="_blank">Instagram</a>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</footer>

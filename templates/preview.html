@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Preview - {{ page.title }}</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        .preview-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: #343a40;
+            color: white;
+            padding: 0.5rem 0;
+        }
+        .preview-content {
+            margin-top: 4rem;
+        }
+        .draft-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 8rem;
+            opacity: 0.1;
+            pointer-events: none;
+            color: #dc3545;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="preview-bar">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="mr-3">Preview Mode</span>
+                    {% if page.status == 'draft' %}
+                    <span class="badge badge-warning">Draft</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <button onclick="window.print()" class="btn btn-sm btn-outline-light mr-2">Print</button>
+                    <a href="/admin" class="btn btn-sm btn-outline-light mr-2">Back to Admin</a>
+                    <button onclick="window.close()" class="btn btn-sm btn-outline-light">Close Preview</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if page.status == 'draft' %}
+    <div class="draft-watermark">DRAFT</div>
+    {% endif %}
+
+    <div class="preview-content">
+        <div class="container">
+            <article class="content-area">
+                <header class="mb-4">
+                    <h1>{{ page.title }}</h1>
+                    <div class="lead">{{ page.description }}</div>
+                    {% if page.status == 'draft' %}
+                    <div class="alert alert-warning mt-3">
+                        <strong>Draft Preview:</strong> This is a preview of unpublished content.
+                    </div>
+                    {% endif %}
+                </header>
+                <hr>
+                <div class="content mt-4">
+                    {{ page.content|safe }}
+                </div>
+            </article>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add New Post</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/tinymce@5/tinymce.min.js"></script>
+    <script>
+        tinymce.init({
+            selector: '#editor',
+            plugins: 'lists link image table code preview',
+            toolbar: 'undo redo | bold italic underline | alignleft aligncenter alignright | bullist numlist outdent indent | link image table code | preview',
+            height: 400,
+            images_upload_url: '/upload_image',
+            images_upload_handler: function (blobInfo, success, failure) {
+                var xhr, formData;
+                xhr = new XMLHttpRequest();
+                xhr.open('POST', '/upload_image');
+                xhr.onload = function () {
+                    var json;
+                    if (xhr.status != 200) {
+                        failure('HTTP Error: ' + xhr.status);
+                        return;
+                    }
+                    json = JSON.parse(xhr.responseText);
+                    if (!json || typeof json.location != 'string') {
+                        failure('Invalid JSON: ' + xhr.responseText);
+                        return;
+                    }
+                    success(json.location);
+                };
+                formData = new FormData();
+                formData.append('file', blobInfo.blob(), blobInfo.filename());
+                xhr.send(formData);
+            }
+        });
+    </script>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
+            <div>
+                <a href="/admin" class="btn btn-outline-light">Back to Admin</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Add New Post</h2>
+                        <form method="post" id="addForm">
+                            <div class="form-group">
+                                <label for="slug">URL Slug</label>
+                                <input type="text" id="slug" name="slug" class="form-control" required pattern="[a-z0-9-]+" 
+                                    title="Only lowercase letters, numbers, and hyphens are allowed"
+                                    value="{{ form_data.slug if form_data else '' }}">
+                                <small class="form-text text-muted">This will be the URL of your post. Use only lowercase letters, numbers, and hyphens.</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="title">Post Title</label>
+                                <input type="text" id="title" name="title" class="form-control" required
+                                       value="{{ form_data.title if form_data else '' }}">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description">Post Description</label>
+                                <textarea id="description" name="description" class="form-control" rows="2" required>{{ form_data.description if form_data else '' }}</textarea>
+                                <small class="form-text text-muted">A brief description of the post content. This may be used in search results and social sharing.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="category">Category</label>
+                                <select id="category" name="category" class="form-control">
+                                    <option value="">Select Category</option>
+                                    {% for cat_slug, category in categories.items() %}
+                                    <option value="{{ cat_slug }}" {% if form_data and form_data.category == cat_slug %}selected{% endif %}>
+                                        {{ category.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="tags">Tags</label>
+                                <input type="text" id="tags" name="tags" class="form-control" 
+                                       value="{{ form_data.tags if form_data else '' }}"
+                                       placeholder="Enter tags separated by commas">
+                                <small class="form-text text-muted">Separate tags with commas (e.g., news, technology, tips)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="content">Post Content</label>
+                                <textarea id="editor" name="content" class="form-control">{{ form_data.content if form_data else '' }}</textarea>
+                            </div>
+
+                            <input type="hidden" name="status" id="postStatus" value="draft">
+                            
+                            <div class="d-flex justify-content-between align-items-center mt-4">
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-primary" onclick="submitForm('published')">Publish</button>
+                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save as Draft</button>
+                                </div>
+                            </div>
+
+                            {% if error %}
+                            <div class="alert alert-danger mt-4">
+                                {{ error }}
+                            </div>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Quick Tips</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled">
+                            <li class="mb-3">
+                                <strong>URL Slug:</strong><br>
+                                Use descriptive keywords for better SEO
+                            </li>
+                            <li class="mb-3">
+                                <strong>Title:</strong><br>
+                                Keep it concise and meaningful
+                            </li>
+                            <li class="mb-3">
+                                <strong>Category:</strong><br>
+                                Choose the most relevant category
+                            </li>
+                            <li class="mb-3">
+                                <strong>Tags:</strong><br>
+                                Add relevant tags to improve discoverability
+                            </li>
+                            <li class="mb-3">
+                                <strong>Description:</strong><br>
+                                Write a compelling summary in 2-3 sentences
+                            </li>
+                        </ul>
+                        <hr>
+                        <p class="mb-0">
+                            <strong>Save as Draft</strong> to continue editing later<br>
+                            <strong>Publish</strong> to make the post visible to visitors
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function submitForm(status) {
+            document.getElementById('postStatus').value = status;
+            document.getElementById('addForm').submit();
+        }
+    </script>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Post</title>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/tinymce@5/tinymce.min.js"></script>
+    <script>
+        tinymce.init({
+            selector: '#editor',
+            plugins: 'lists link image table code preview',
+            toolbar: 'undo redo | bold italic underline | alignleft aligncenter alignright | bullist numlist outdent indent | link image table code | preview',
+            height: 400,
+            images_upload_url: '/upload_image',
+            images_upload_handler: function (blobInfo, success, failure) {
+                var xhr, formData;
+                xhr = new XMLHttpRequest();
+                xhr.open('POST', '/upload_image');
+                xhr.onload = function () {
+                    var json;
+                    if (xhr.status != 200) {
+                        failure('HTTP Error: ' + xhr.status);
+                        return;
+                    }
+                    json = JSON.parse(xhr.responseText);
+                    if (!json || typeof json.location != 'string') {
+                        failure('Invalid JSON: ' + xhr.responseText);
+                        return;
+                    }
+                    success(json.location);
+                };
+                formData = new FormData();
+                formData.append('file', blobInfo.blob(), blobInfo.filename());
+                xhr.send(formData);
+            }
+        });
+    </script>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
+            <div>
+                <a href="/post/{{ slug }}" target="_blank" class="btn btn-outline-light mr-2">View Post</a>
+                <a href="/admin" class="btn btn-outline-light">Back to Admin</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <form method="post" id="editForm">
+                            <div class="form-group">
+                                <label for="title">Post Title</label>
+                                <input type="text" id="title" name="title" class="form-control" value="{{ post['title'] }}" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description">Post Description</label>
+                                <textarea id="description" name="description" class="form-control" rows="2" required>{{ post['description'] }}</textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="category">Category</label>
+                                <select id="category" name="category" class="form-control">
+                                    <option value="">Select Category</option>
+                                    {% for cat_slug, category in categories.items() %}
+                                    <option value="{{ cat_slug }}" {% if post.get('category') == cat_slug %}selected{% endif %}>
+                                        {{ category.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="tags">Tags</label>
+                                <input type="text" id="tags" name="tags" class="form-control" 
+                                       value="{{ ','.join(post.get('tags', [])) }}" 
+                                       placeholder="Enter tags separated by commas">
+                                <small class="form-text text-muted">Separate tags with commas (e.g., news, technology, tips)</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="content">Post Content</label>
+                                <textarea id="editor" name="content" class="form-control">{{ post['content'] }}</textarea>
+                            </div>
+
+                            <input type="hidden" name="status" id="postStatus" value="{{ post.get('status', 'draft') }}">
+                            
+                            <div class="d-flex justify-content-between align-items-center mt-4">
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-primary" onclick="submitForm('published')">Publish</button>
+                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save as Draft</button>
+                                </div>
+                                <a href="/post/{{ slug }}" target="_blank" class="btn btn-info">View Post</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Post Status</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>
+                            <strong>Current Status:</strong> 
+                            <span class="badge badge-{{ 'success' if post.get('status') == 'published' else 'warning' }}">
+                                {{ post.get('status', 'draft').title() }}
+                            </span>
+                        </p>
+                        <p><strong>Author:</strong> {{ post.get('author', 'Admin') }}</p>
+                        {% if post.get('created_at') %}
+                        <p><strong>Created:</strong> <br>{{ post['created_at']|truncate(19, True, '') }}</p>
+                        {% endif %}
+                        {% if post.get('updated_at') %}
+                        <p><strong>Last Modified:</strong> <br>{{ post['updated_at']|truncate(19, True, '') }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Quick Tips</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled">
+                            <li class="mb-3">
+                                <strong>Categories:</strong><br>
+                                Help organize your posts into sections
+                            </li>
+                            <li class="mb-3">
+                                <strong>Tags:</strong><br>
+                                Make your posts discoverable
+                            </li>
+                            <li class="mb-3">
+                                <strong>Description:</strong><br>
+                                Write a compelling summary
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function submitForm(status) {
+            document.getElementById('postStatus').value = status;
+            document.getElementById('editForm').submit();
+        }
+    </script>
+    
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>

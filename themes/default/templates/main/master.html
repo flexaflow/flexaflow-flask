@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if page and page.title %}{{ page.title }} - {% endif %}{{ settings.site_title }}</title>
+    <meta name="description" content="{% if page and page.description %}{{ page.description }}{% else %}{{ settings.site_description }}{% endif %}">
+    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    {% if settings.google_analytics %}
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ settings.google_analytics }}"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', '{{ settings.google_analytics }}');
+    </script>
+    {% endif %}
+    
+    <style>
+        :root {
+            --primary-color: #1a365d;
+            --secondary-color: #0056b3;
+            --accent-color: #5a67d8;
+            --text-color: #2d3748;
+            --light-gray: #f7fafc;
+            --border-color: #e2e8f0;
+            --dark-gray: #4a5568;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-color);
+            line-height: 1.8;
+            background-color: #f8fafc;
+            padding-top: 70px; /* Space for fixed navbar */
+        }
+
+        /* Header Styles */
+        .site-header {
+            background: white;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .site-header.scrolled {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .header-container {
+            padding: 0.75rem 0;
+        }
+
+        .site-title {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-decoration: none;
+            letter-spacing: -0.5px;
+        }
+
+        .site-title:hover {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .navbar {
+            padding: 0;
+        }
+
+        .navbar .nav-link {
+            font-weight: 500;
+            color: var(--text-color);
+            padding: 0.5rem 1.25rem;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .navbar .nav-link:hover {
+            color: var(--accent-color);
+        }
+
+        .navbar .nav-link::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            background: var(--accent-color);
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: width 0.3s;
+        }
+
+        .navbar .nav-link:hover::after {
+            width: 70%;
+        }
+
+        .navbar-toggle {
+            border: none;
+            background: transparent;
+        }
+
+        /* Content Styles */
+        .main-content {
+            padding: 3.5rem 0;
+        }
+
+        .blog-post {
+            margin-bottom: 3.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 2.5rem;
+            position: relative;
+        }
+
+        .blog-post:last-child {
+            border-bottom: none;
+            margin-bottom: 1rem;
+        }
+
+        .post-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            color: var(--primary-color);
+            letter-spacing: -0.5px;
+            line-height: 1.3;
+        }
+
+        .post-meta {
+            color: var(--dark-gray);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .post-meta span {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 1.5rem;
+        }
+
+        .post-meta i {
+            margin-right: 0.4rem;
+        }
+
+        .post-excerpt {
+            font-size: 1.1rem;
+            color: var(--dark-gray);
+            margin-bottom: 1.5rem;
+            line-height: 1.7;
+        }
+
+        .read-more {
+            font-weight: 600;
+            color: var(--accent-color);
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .read-more i {
+            transition: transform 0.3s;
+        }
+
+        .read-more:hover {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        .read-more:hover i {
+            transform: translateX(4px);
+        }
+
+        /* Article Content Styling */
+        .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 {
+            color: var(--primary-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+
+        .content p {
+            margin-bottom: 1.5rem;
+        }
+
+        .content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin: 2rem 0;
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 1.5rem;
+            padding-left: 1.5rem;
+        }
+
+        .content blockquote {
+            border-left: 4px solid var(--accent-color);
+            padding-left: 1.5rem;
+            margin-left: 0;
+            font-style: italic;
+            color: var(--dark-gray);
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            position: sticky;
+            top: 85px;
+        }
+
+        .sidebar-section {
+            margin-bottom: 2.5rem;
+            padding: 1.75rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .sidebar-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: var(--primary-color);
+            position: relative;
+            padding-bottom: 0.75rem;
+        }
+
+        .sidebar-title::after {
+            content: '';
+            position: absolute;
+            width: 3rem;
+            height: 3px;
+            background: var(--accent-color);
+            bottom: 0;
+            left: 0;
+        }
+
+        .tag-cloud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.625rem;
+        }
+
+        .tag-link {
+            background: var(--light-gray);
+            padding: 0.35rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--text-color);
+            text-decoration: none;
+            transition: all 0.3s;
+            border: 1px solid var(--border-color);
+        }
+
+        .tag-link:hover {
+            background: var(--accent-color);
+            color: white;
+            border-color: var(--accent-color);
+            text-decoration: none;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .category-link {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            color: var(--text-color);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .category-link:last-child {
+            border-bottom: none;
+        }
+
+        .category-link:hover {
+            color: var(--accent-color);
+            padding-left: 0.3rem;
+            text-decoration: none;
+        }
+
+        /* Related Posts */
+        .related-post {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .related-post:last-child {
+            border-bottom: none;
+        }
+
+        .related-post-title {
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            transition: color 0.2s;
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+
+        .related-post-title:hover {
+            color: var(--accent-color);
+        }
+
+        /* Footer Styles */
+        .site-footer {
+            background: #1a202c;
+            color: rgba(255, 255, 255, 0.8);
+            padding: 4rem 0 2rem;
+            margin-top: 4rem;
+        }
+
+        .footer-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: white;
+        }
+
+        .footer-link {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            transition: color 0.2s;
+            line-height: 1.8;
+        }
+
+        .footer-link:hover {
+            color: white;
+            text-decoration: none;
+        }
+
+        .footer-social a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            color: black;
+            margin-right: 0.5rem;
+            transition: all 0.3s;
+        }
+
+        .footer-social a:hover {
+            background: var(--accent-color);
+            transform: translateY(-2px);
+        }
+
+        .footer-bottom {
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Pagination */
+        .pagination {
+            margin-top: 3.5rem;
+            justify-content: center;
+        }
+
+        .page-link {
+            color: var(--primary-color);
+            border: 1px solid var(--border-color);
+            margin: 0 0.25rem;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .page-link:hover {
+            background: var(--accent-color);
+            color: white;
+            border-color: var(--accent-color);
+        }
+
+        .page-item.active .page-link {
+            background-color: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+
+        .share-label {
+            font-weight: 600;
+            margin-right: 1rem;
+        }
+
+        .share-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 20px;
+            width: auto;
+            height: 36px;
+            color: white;
+            border-radius: 20px;
+            text-decoration: none;
+            margin-right: 0.75rem;
+            transition: all 0.3s;
+        }
+
+        .share-button:hover {
+            opacity: 0.9;
+            color: white;
+            text-decoration: none;
+            transform: translateY(-2px);
+        }
+
+        .share-twitter { background: #1DA1F2; }
+        .share-facebook { background: #4267B2; }
+        .share-linkedin { background: #0077b5; }
+
+        /* Search Box */
+        .search-form {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            padding-right: 3rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(90,103,216,0.1);
+        }
+
+        .search-button {
+            position: absolute;
+            right: 0;
+            top: 0;
+            height: 100%;
+            width: 3rem;
+            border: none;
+            background: transparent;
+            color: var(--dark-gray);
+            transition: color 0.3s;
+            cursor: pointer;
+        }
+
+        .search-button:hover {
+            color: var(--accent-color);
+        }
+
+        /* Responsive fixes */
+        @media (max-width: 991.98px) {
+            .sidebar {
+                margin-top: 3rem;
+                position: static;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .post-title {
+                font-size: 2rem;
+            }
+            .main-content {
+                padding: 2rem 0;
+            }
+            .header-container {
+                padding: 0.5rem 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <div class="header-container d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    {% if settings.logo %}
+                    <a href="/" class="mr-3">
+                        <img src="{{ settings.logo }}" alt="{{ settings.site_title }}" height="36">
+                    </a>
+                    {% endif %}
+                    <a href="/" class="site-title">{{ settings.site_title }}</a>
+                </div>
+                
+                <button class="navbar-toggler d-md-none" type="button" data-toggle="collapse" data-target="#navbarMain">
+                    <i class="fas fa-bars"></i>
+                </button>
+                
+                <nav class="navbar d-none d-md-block">
+                    <div class="navbar-nav d-flex flex-row">
+                        {% for item in settings.menu_items %}
+                        <a href="{{ item.url }}" class="nav-link">{{ item.label }}</a>
+                        {% endfor %}
+                    </div>
+                </nav>
+            </div>
+        </div>
+        
+        <!-- Mobile Navigation -->
+        <div class="collapse navbar-collapse" id="navbarMain">
+            <div class="container">
+                <div class="py-2">
+                    {% for item in settings.menu_items %}
+                    <a href="{{ item.url }}" class="nav-link d-block py-2">{{ item.label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-8">
+                    {% block content %}
+                    {% if page %}
+                        {% if page.title %}<h1 class="post-title">{{ page.title }}</h1>{% endif %}
+                        {% if page.description %}<div class="lead post-excerpt">{{ page.description }}</div>{% endif %}
+                        {% if page.content %}<div class="content">{{ page.content|safe }}</div>{% endif %}
+                    {% endif %}
+
+                    {% if posts %}
+                    <div class="blog-posts">
+                        {% for post in posts %}
+                        <article class="blog-post">
+                            <h2 class="h2"><a href="/post/{{ post.slug }}" class="text-dark">{{ post.title }}</a></h2>
+                            <div class="post-meta">
+                                <span><i class="far fa-calendar"></i> {{ post.created_at|truncate(10, true, '') }}</span>
+                                {% if post.author %}
+                                <span><i class="far fa-user"></i> {{ post.author }}</span>
+                                {% endif %}
+                                {% if post.category %}
+                                <span><i class="far fa-folder"></i> 
+                                    <a href="/category/{{ post.category }}" class="text-muted">{{ post.category }}</a>
+                                </span>
+                                {% endif %}
+                                {% if post.tags and post.tags|length > 0 %}
+                                <span><i class="fas fa-tags"></i> 
+                                    {% for tag in post.tags[:2] %}
+                                    <a href="/tag/{{ tag }}" class="text-muted">{{ tag }}</a>{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="post-excerpt">{{ post.description }}</div>
+                            <a href="/post/{{ post.slug }}" class="read-more">Read More <i class="fas fa-arrow-right ml-1"></i></a>
+                        </article>
+                        {% endfor %}
+                    </div>
+
+                    {% if pagination %}
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination">
+                            {% if pagination.prev_page %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ pagination.prev_page }}"><i class="fas fa-chevron-left mr-1"></i> Previous</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for p in pagination.pages %}
+                            <li class="page-item {% if p == pagination.current_page %}active{% endif %}">
+                                <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+                            
+                            {% if pagination.next_page %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ pagination.next_page }}">Next <i class="fas fa-chevron-right ml-1"></i></a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    {% endif %}
+                    {% endblock %}
+                </div>
+
+                <div class="col-lg-4">
+                    <aside class="sidebar">
+                        <!-- Search Form -->
+                        <div class="sidebar-section">
+                            <form class="search-form" action="/search">
+                                <input type="text" name="q" class="search-input" placeholder="Search articles..." required>
+                                <button type="submit" class="search-button">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </form>
+                        </div>
+                        
+                        {% if categories %}
+                        <div class="sidebar-section">
+                            <h4 class="sidebar-title">Categories</h4>
+                            <div class="categories-list">
+                                {% for cat_slug, category in categories.items() %}
+                                <a href="/category/{{ cat_slug }}" class="category-link">
+                                    <span>{{ category.name }}</span>
+                                    <span class="badge badge-light">{{ category.count if category.count is defined else 0 }}</span>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if tags %}
+                        <div class="sidebar-section">
+                            <h4 class="sidebar-title">Popular Tags</h4>
+                            <div class="tag-cloud">
+                                {% for tag_slug, tag in tags.items() %}
+                                <a href="/tag/{{ tag_slug }}" class="tag-link">
+                                    {{ tag.name }} ({{ tag.count }})
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if related_posts %}
+                        <div class="sidebar-section">
+                            <h4 class="sidebar-title">Related Articles</h4>
+                            <div class="related-posts">
+                                {% for related in related_posts %}
+                                <div class="related-post">
+                                    <a href="/post/{{ related.slug }}" class="text-dark">
+                                        <h6 class="related-post-title">{{ related.title }}</h6>
+                                    </a>
+                                    <div class="d-flex align-items-center">
+                                        <small class="text-muted">
+                                            <i class="far fa-calendar mr-1"></i>
+                                            {{ related.created_at|truncate(10, true, '') }}
+                                        </small>
+                                        {% if related.category %}
+                                        <small class="text-muted ml-auto">
+                                            <a href="/category/{{ related.category }}" class="text-muted">
+                                                {{ related.category }}
+                                            </a>
+                                        </small>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </aside>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 mb-4 mb-md-0">
+                    <h5 class="footer-title">About {{ settings.site_title }}</h5>
+                    <p>{{ settings.site_description }}</p>
+                    <div class="footer-social mt-4">
+                        {% if settings.social_links.facebook %}
+                        <a href="{{ settings.social_links.facebook }}" aria-label="Facebook">
+                            <i class="fab fa-facebook-f"></i>
+                        </a>
+                        {% endif %}
+                        {% if settings.social_links.twitter %}
+                        <a href="{{ settings.social_links.twitter }}" aria-label="Twitter">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        {% endif %}
+                        {% if settings.social_links.instagram %}
+                        <a href="{{ settings.social_links.instagram }}" aria-label="Instagram">
+                            <i class="fab fa-instagram"></i>
+                        </a>
+                        {% endif %}
+                        <a href="/rss.xml" aria-label="RSS Feed">
+                            <i class="fas fa-rss"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4 mb-md-0">
+                    <h5 class="footer-title">Quick Links</h5>
+                    <ul class="list-unstyled">
+                        {% for item in settings.menu_items %}
+                        <li class="mb-2"><a href="{{ item.url }}" class="footer-link">{{ item.label }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <h5 class="footer-title">Newsletter</h5>
+                    <p>Subscribe to our newsletter for the latest updates.</p>
+                    <form class="mt-3">
+                        <div class="input-group">
+                            <input type="email" class="form-control" placeholder="Your email" required>
+                            <div class="input-group-append">
+                                <button class="btn btn-primary" type="submit">Subscribe</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="footer-bottom text-center">
+                <p class="mb-0">&copy; {{ year|default('2025') }} {{ settings.site_title }}. All rights reserved.</p>
+                {% if settings.privacy_page or settings.terms_page %}
+                <p class="mt-2 mb-0">
+                    {% if settings.privacy_page %}
+                    <a href="/{{ settings.privacy_page }}" class="footer-link mr-3">Privacy Policy</a>
+                    {% endif %}
+                    {% if settings.terms_page %}
+                    <a href="/{{ settings.terms_page }}" class="footer-link">Terms of Service</a>
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    
+    <script>
+        // Fixed navbar effect on scroll
+        $(window).scroll(function() {
+            if ($(window).scrollTop() > 50) {
+                $('.site-header').addClass('scrolled');
+            } else {
+                $('.site-header').removeClass('scrolled');
+            }
+        });
+    </script>
+</body>
+</html>

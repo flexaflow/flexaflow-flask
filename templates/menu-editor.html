@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Menu Editor - Admin</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
+            <div>
+                <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
+                <a href="/" class="btn btn-outline-light">View Site</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>Menu Editor</h2>
+        
+        <div class="row mt-4">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Add Menu Item</h5>
+                        <form id="addMenuForm">
+                            <div class="form-group">
+                                <label>Label</label>
+                                <input type="text" class="form-control" id="menuLabel" required>
+                            </div>
+                            <div class="form-group">
+                                <label>URL</label>
+                                <input type="text" class="form-control" id="menuUrl" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Add Item</button>
+                        </form>
+                        
+                        <hr>
+                        
+                        <h6 class="mt-4">Available Pages</h6>
+                        <div class="list-group">
+                            {% for slug, page in pages.items() %}
+                            <button type="button" class="list-group-item list-group-item-action add-page" 
+                                    data-url="/{{ slug }}" 
+                                    data-label="{{ page.title }}">
+                                {{ page.title }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Current Menu</h5>
+                        <p class="text-muted">Drag items to reorder them</p>
+                        
+                        <ul id="menuItems" class="list-group">
+                            {% for item in menu_items %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center" 
+                                data-url="{{ item.url }}" 
+                                data-label="{{ item.label }}">
+                                <span>{{ item.label }}</span>
+                                <div>
+                                    <small class="text-muted mr-3">{{ item.url }}</small>
+                                    <button class="btn btn-sm btn-danger remove-item">×</button>
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        
+                        <button id="saveMenu" class="btn btn-primary mt-4">Save Menu</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+    <script>
+        async function callAPI(endpoint, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                };
+
+                if (data && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+                    options.body = JSON.stringify(data);
+                }
+
+                const response = await fetch(`/api/${endpoint}`, options);
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('API call failed:', error);
+                alert('API request failed: ' + error.message);
+                return null;
+            }
+        }
+
+        $(document).ready(function() {
+            $('#menuItems').sortable();
+            
+            $('#addMenuForm').on('submit', function(e) {
+                e.preventDefault();
+                addMenuItem($('#menuLabel').val(), $('#menuUrl').val());
+                this.reset();
+            });
+            
+            $('.add-page').click(function() {
+                addMenuItem($(this).data('label'), $(this).data('url'));
+            });
+            
+            $(document).on('click', '.remove-item', function() {
+                $(this).closest('li').remove();
+            });
+            
+            $('#saveMenu').click(async function() {
+                const menuItems = [];
+                $('#menuItems li').each(function() {
+                    menuItems.push({
+                        label: $(this).data('label'),
+                        url: $(this).data('url')
+                    });
+                });
+                
+                const response = await callAPI('menu', 'POST', menuItems);
+                if (response) {
+                    alert('Menu saved successfully!');
+                }
+            });
+            
+            function addMenuItem(label, url) {
+                const item = `
+                    <li class="list-group-item d-flex justify-content-between align-items-center" 
+                        data-url="${url}" 
+                        data-label="${label}">
+                        <span>${label}</span>
+                        <div>
+                            <small class="text-muted mr-3">${url}</small>
+                            <button class="btn btn-sm btn-danger remove-item">×</button>
+                        </div>
+                    </li>
+                `;
+                $('#menuItems').append(item);
+            }
+        });
+    </script>
+</body>
+</html>
