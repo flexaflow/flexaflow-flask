@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
 </head>
 <body>
@@ -12,7 +13,8 @@
             <div>
                 <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
                 <a href="/admin/menu" class="btn btn-outline-light mr-2">Menu Editor</a>
-                <a href="/" class="btn btn-outline-light">View Site</a>
+                <a href="/" class="btn btn-outline-light mr-2">View Site</a>
+                <a href="/logout" class="btn btn-outline-light mr-2">Logout</a>
             </div>
         </div>
     </nav>
@@ -106,7 +108,7 @@
                                             {% endif %}
                                         </td>
                                         <td>{{ post.get('author', 'Admin') }}</td>
-                                        <td>{{ post.get('category', 'Uncategorized') }}</td>
+                                        <td>{% if post.get('category') is mapping %}{{ post.get('category').name }}{% else %}{{ post.get('category', 'Uncategorized') }}{% endif %}</td>
                                         <td>
                                             <span class="badge badge-{{ 'success' if post.get('status') == 'published' else 'warning' }}">
                                                 {{ post.get('status', 'draft').title() }}

@@ -4,16 +4,147 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add New Page</title>
+    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <script src="https://cdn.jsdelivr.net/npm/tinymce@5/tinymce.min.js"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
         tinymce.init({
             selector: '#editor',
-            plugins: 'lists link image table code preview',
-            toolbar: 'undo redo | bold italic underline | alignleft aligncenter alignright | bullist numlist outdent indent | link image table code | preview',
+            plugins: 'lists link image table code preview media',
+            toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist | link image media gallery | table code preview',
             height: 400,
-            images_upload_url: '/upload_image'
+            automatic_uploads: true,
+            images_upload_url: '/upload_image',
+            images_upload_credentials: true,
+            images_upload_handler: function (blobInfo, success, failure, progress) {
+                var xhr, formData;
+                xhr = new XMLHttpRequest();
+                xhr.withCredentials = false;
+                xhr.open('POST', '/upload_image');
+                
+                // Add CSRF token header
+                var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+                xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+                
+                xhr.upload.onprogress = function(e) {
+                    progress(e.loaded / e.total * 100);
+                };
+                
+                xhr.onload = function() {
+                    var json;
+                    if (xhr.status === 403) {
+                        failure('CSRF token validation failed');
+                        return;
+                    }
+                    if (xhr.status !== 200) {
+                        failure('HTTP Error: ' + xhr.status);
+                        return;
+                    }
+                    try {
+                        json = JSON.parse(xhr.responseText);
+                        if (!json || typeof json.location != 'string') {
+                            failure('Invalid JSON: ' + xhr.responseText);
+                            return;
+                        }
+                        success(json.location);
+                    } catch (e) {
+                        failure('Invalid JSON: ' + xhr.responseText);
+                    }
+                };
+                
+                xhr.onerror = function() {
+                    failure('Image upload failed');
+                };
+                
+                formData = new FormData();
+                formData.append('file', blobInfo.blob(), blobInfo.filename());
+                formData.append('csrf_token', csrfToken);
+                xhr.send(formData);
+            },
+            setup: function(editor) {
+                editor.ui.registry.addButton('gallery', {
+                    text: 'Gallery',
+                    icon: 'gallery',
+                    onAction: function() {
+                        openMediaSelector(function(imageUrl) {
+                            editor.insertContent('<img src="' + imageUrl + '" alt="">');
+                        });
+                    }
+                });
+            }
         });
+
+        let selectedMediaUrl = null;
+        let mediaCallback = null;
+
+        function openMediaSelector(callback) {
+            mediaCallback = callback;
+            fetch('/admin/media?format=json')
+                .then(response => response.json())
+                .then(data => {
+                    const grid = document.getElementById('mediaGrid');
+                    grid.innerHTML = data.items.map(item => `
+                        <div class="media-item" onclick="selectMedia(this)" data-url="${item.url}">
+                            <img src="${item.url}" alt="${item.alt_text || item.original_filename}">
+                            <div class="info">
+                                <small class="text-muted">${item.width}x${item.height}</small>
+                            </div>
+                        </div>
+                    `).join('');
+                    const modal = new bootstrap.Modal(document.getElementById('mediaSelectorModal'));
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error loading media:', error);
+                });
+        }
+
+        function selectMedia(element) {
+            document.querySelectorAll('.media-item').forEach(item => {
+                item.classList.remove('selected-media');
+            });
+            element.classList.add('selected-media');
+            selectedMediaUrl = element.dataset.url;
+        }
+
+        function insertSelectedMedia() {
+            if (selectedMediaUrl && mediaCallback) {
+                mediaCallback(selectedMediaUrl);
+                const modal = bootstrap.Modal.getInstance(document.getElementById('mediaSelectorModal'));
+                modal.hide();
+                selectedMediaUrl = null;
+                mediaCallback = null;
+            }
+        }
+
+        function previewDraft() {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = '/preview_draft';
+            form.target = '_blank';
+
+            ['title', 'description', 'content'].forEach(field => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = field;
+                if (field === 'content') {
+                    input.value = tinymce.get('editor').getContent();
+                } else {
+                    input.value = document.getElementById(field).value;
+                }
+                form.appendChild(input);
+            });
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
+        function submitForm(status) {
+            document.getElementById('pageStatus').value = status;
+            document.getElementById('addForm').submit();
+        }
     </script>
 </head>
 <body>
@@ -100,36 +231,6 @@
             </div>
         </div>
     </div>
-
-    <script>
-        function submitForm(status) {
-            document.getElementById('pageStatus').value = status;
-            document.getElementById('addForm').submit();
-        }
-
-        function previewDraft() {
-            const form = document.createElement('form');
-            form.method = 'post';
-            form.action = '/preview_draft';
-            form.target = '_blank';
-
-            ['title', 'description', 'content'].forEach(field => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = field;
-                if (field === 'content') {
-                    input.value = tinymce.get('editor').getContent();
-                } else {
-                    input.value = document.getElementById(field).value;
-                }
-                form.appendChild(input);
-            });
-
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
-        }
-    </script>
 
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage Tags and Categories</title>
+    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
+            <div>
+                <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
+                <a href="/admin/menu" class="btn btn-outline-light mr-2">Menu Editor</a>
+                <a href="/" class="btn btn-outline-light">View Site</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container mt-4">
+        <h2>Manage Tags and Categories</h2>
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <h4>Add Category</h4>
+                <form method="post" action="/admin/category/add" class="form-inline mb-3">
+                    <input type="text" name="name" class="form-control mr-2 mb-2" placeholder="Category Name (unique)" required>
+                    <button type="submit" class="btn btn-primary mb-2">Add Category</button>
+                </form>
+                <h5>All Categories</h5>
+                <ul class="list-group">
+                    {% for slug, cat in categories.items() %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><strong>{{ cat.name }}</strong> ({{ cat.count or 0 }})</span>
+                        {% if slug in unused_categories %}
+                        <form method="post" action="/admin/category/delete/{{ slug }}" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused category?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="col-md-6 mb-4">
+                <h4>Add Tag</h4>
+                <form method="post" action="/admin/tag/add" class="form-inline mb-3">
+                    <input type="text" name="name" class="form-control mr-2 mb-2" placeholder="Tag Name" required>
+                    <button type="submit" class="btn btn-primary mb-2">Add Tag</button>
+                </form>
+                <h5>All Tags</h5>
+                <ul class="list-group">
+                    {% for tag, tag_obj in tags.items() %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><strong>{{ tag_obj.name or tag }}</strong> ({{ tag_obj.count or 0 }})</span>
+                        {% if tag in unused_tags %}
+                        <form method="post" action="/admin/tag/delete/{{ tag_obj.id }}" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused tag?')">Delete</button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>

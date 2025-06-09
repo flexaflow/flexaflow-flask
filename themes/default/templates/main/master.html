@@ -681,7 +681,7 @@
                             <i class="fab fa-instagram"></i>
                         </a>
                         {% endif %}
-                        <a href="/rss.xml" aria-label="RSS Feed">
+                        <a href="#" aria-label="RSS Feed">
                             <i class="fas fa-rss"></i>
                         </a>
                     </div>
@@ -694,20 +694,7 @@
                         {% endfor %}
                     </ul>
                 </div>
-                <div class="col-md-4">
-                    <h5 class="footer-title">Newsletter</h5>
-                    <p>Subscribe to our newsletter for the latest updates.</p>
-                    <form class="mt-3">
-                        <div class="input-group">
-                            <input type="email" class="form-control" placeholder="Your email" required>
-                            <div class="input-group-append">
-                                <button class="btn btn-primary" type="submit">Subscribe</button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
+
             <div class="footer-bottom text-center">
                 <p class="mb-0">&copy; {{ year|default('2025') }} {{ settings.site_title }}. All rights reserved.</p>
                 {% if settings.privacy_page or settings.terms_page %}
