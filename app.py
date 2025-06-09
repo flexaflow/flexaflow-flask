@@ -584,6 +584,7 @@ def admin():
 def add_page_route():
 	if request.method == 'POST':
 		slug = request.form.get("slug")
+		slug=slugify(slug)
 		title = request.form.get("title")
 		description = request.form.get("description") 
 		content = request.form.get("content")
