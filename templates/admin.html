@@ -20,6 +20,12 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- Export/Import Buttons -->
+        <div class="mb-4 d-flex justify-content-end">
+            <a href="{{ url_for('export_content') }}" class="btn btn-success mr-2">Export as XML</a>
+            <a href="{{ url_for('import_content') }}" class="btn btn-info">Import from XML</a>
+        </div>
+
         <ul class="nav nav-tabs mb-4">
             <li class="nav-item">
                 <a class="nav-link active" href="#pages" data-toggle="tab">Pages</a>

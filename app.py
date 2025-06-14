@@ -46,6 +46,8 @@ from data_store import (
 from PIL import Image
 import io
 import secrets
+from flask import send_file
+import xml.etree.ElementTree as ET
 
 # Load environment variables
 load_dotenv()
@@ -1375,6 +1377,109 @@ def logout():
     session.clear()
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
+
+
+@app.route("/admin/export", methods=["GET"])
+@login_required
+def export_content():
+    """Export all posts and pages as XML"""
+    FLEXAFLOW_VERSION = "1.0.0"
+    export_time = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    site_settings = get_site_settings()
+    site_title = site_settings.get("site_title", "site").strip().lower().replace(" ", "_")
+    # Compose filename: flexaflow(v1.0.0)_sitename_YYYYMMDDTHHMMSSZ.xml
+    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    filename = f"flexaflow_{FLEXAFLOW_VERSION}_export_{site_title}_{timestamp}.xml"
+
+    root = ET.Element("flexaflow_export", version="1.0", exported_at=export_time)
+
+    # Export pages
+    pages_elem = ET.SubElement(root, "pages")
+    for slug, page in get_pages().items():
+        page_elem = ET.SubElement(pages_elem, "page", slug=slug)
+        for k, v in page.items():
+            child = ET.SubElement(page_elem, k)
+            child.text = str(v) if v is not None else ""
+
+    # Export posts
+    posts_elem = ET.SubElement(root, "posts")
+    for slug, post in get_posts().items():
+        post_elem = ET.SubElement(posts_elem, "post", slug=slug)
+        for k, v in post.items():
+            if isinstance(v, list):
+                list_elem = ET.SubElement(post_elem, k)
+                for item in v:
+                    item_elem = ET.SubElement(list_elem, "item")
+                    item_elem.text = str(item)
+            else:
+                child = ET.SubElement(post_elem, k)
+                child.text = str(v) if v is not None else ""
+
+    # Serialize XML to memory
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return send_file(
+        io.BytesIO(xml_bytes),
+        mimetype="application/xml",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/admin/import", methods=["GET", "POST"])
+@login_required
+def import_content():
+    """Import posts and pages from uploaded XML, skipping duplicates"""
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file or not file.filename.endswith(".xml"):
+            flash("Please upload a valid XML file.", "error")
+            return redirect(url_for("import_content"))
+        try:
+            tree = ET.parse(file)
+            root = tree.getroot()
+            # Get existing slugs
+            existing_page_slugs = set(get_pages().keys())
+            existing_post_slugs = set(get_posts().keys())
+            skipped_pages = []
+            skipped_posts = []
+            imported_pages = 0
+            imported_posts = 0
+            # Import pages
+            pages_elem = root.find("pages")
+            if pages_elem is not None:
+                for page_elem in pages_elem.findall("page"):
+                    slug = page_elem.attrib.get("slug")
+                    if not slug or slug in existing_page_slugs:
+                        skipped_pages.append(slug)
+                        continue
+                    page_data = {child.tag: child.text for child in page_elem}
+                    add_page(slug, page_data)
+                    imported_pages += 1
+            # Import posts
+            posts_elem = root.find("posts")
+            if posts_elem is not None:
+                for post_elem in posts_elem.findall("post"):
+                    slug = post_elem.attrib.get("slug")
+                    if not slug or slug in existing_post_slugs:
+                        skipped_posts.append(slug)
+                        continue
+                    post_data = {}
+                    for child in post_elem:
+                        if child.tag in ("tags",):
+                            post_data[child.tag] = [item.text for item in child.findall("item")]
+                        else:
+                            post_data[child.tag] = child.text
+                    add_post(slug, post_data)
+                    imported_posts += 1
+            update_tag_counts()
+            msg = f"Import successful! Imported {imported_pages} pages and {imported_posts} posts."
+            if skipped_pages or skipped_posts:
+                msg += f" Skipped {len(skipped_pages)} pages and {len(skipped_posts)} posts due to duplicate slugs."
+            flash(msg, "success")
+        except Exception as e:
+            flash(f"Import failed: {e}", "error")
+        return redirect(url_for("admin"))
+    return render_template("import.html")
 
 
 if __name__ == "__main__":
