@@ -1,3 +1,7 @@
+
+#  ***********************  Start Standard And Installed library Import ****************************
+#**************************
+
 import os
 import re
 import uuid
@@ -49,13 +53,39 @@ import secrets
 from flask import send_file
 import xml.etree.ElementTree as ET
 
-# Load environment variables
-load_dotenv()
 
-# Additional imports for SQLAlchemy operations
-from data_store import Page, Post, Category, Tag, SiteSetting
 from sqlalchemy.exc import SQLAlchemyError
+#  ***********************  End Standard And Installed library Import ****************************
+#*
+#
+#
+#
+#
+#
+#
+#
 
+
+
+
+#
+#  ***********************  Start Local Import ****************************
+#**************************
+from data_store import Page, Post, Category, Tag, SiteSetting
+
+#  ***********************  End Local Import ****************************
+#**************************
+
+
+
+
+
+
+
+
+#  ***********************  Start Configuration ****************************
+#**************************
+load_dotenv()
 app = Flask(__name__, static_folder="static")
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(16))
 
@@ -93,7 +123,22 @@ app.secret_key = secrets.token_hex(32)
 app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
+#  ***********************  End Configuration  ****************************
+#*
 
+#
+#
+#
+#
+#
+#
+#
+
+
+
+
+#  ***********************  start helper functions ****************************
+#**************************
 def slugify(title):
 	# Lowercase, remove special chars, replace spaces with dashes
 	slug = re.sub(r"[^\w\s-]", "", title).strip().lower()
@@ -153,208 +198,9 @@ def login_required(f):
 	return decorated_function
 
 
-@app.route("/setup", methods=["GET", "POST"])
-def setup():
-	if db_manager.is_setup_complete():
-		flash("Setup has already been completed.", "warning")
-		return redirect(url_for("login"))
-
-	if request.method == "POST":
-		username = request.form.get("username")
-		password = request.form.get("password")
-		confirm_password = request.form.get("confirm_password")
-		email = request.form.get("email")
-
-		if password != confirm_password:
-			flash("Passwords do not match.", "error")
-			return render_template("setup.html")
-
-		if len(password) < 8:
-			flash("Password must be at least 8 characters long.", "error")
-			return render_template("setup.html")
-
-		# Generate hashed password
-		hashed_password = generate_password_hash(password)
-
-		# Complete setup with 2FA disabled by default
-		success = db_manager.complete_setup(
-			username=username,
-			password=hashed_password,
-			email=email,
-			enable_2fa=False,
-			two_fa_secret=None,
-		)
-
-		if success:
-			flash("Setup completed successfully!", "success")
-			return redirect(url_for("login"))
-		else:
-			flash("Error during setup. Please try again.", "error")
-
-	return render_template("setup.html")
 
 
-@app.route("/login", methods=["GET", "POST"])
-@setup_required
-def login():
-	# Always clear any 2FA session flags on GET (fresh login page)
-	if request.method == "GET":
-		session.pop("pending_2fa", None)
-		session.pop("temp_username", None)
-		session.pop("logged_in", None)
 
-	if request.method == "POST":
-		username = request.form.get("username")
-		password = request.form.get("password")
-		twofa_code = request.form.get("2fa_code")
-
-		admin_setup = db_manager.get_admin_setup()
-		if not admin_setup:
-			flash("System is not properly configured.", "error")
-			return redirect(url_for("setup"))
-
-		# If we're in the 2FA verification step
-		if session.get("pending_2fa") and twofa_code:
-			if username != session.get("temp_username"):
-				session.clear()
-				flash("Invalid session. Please login again.", "error")
-				return redirect(url_for("login"))
-
-			if admin_setup.get("two_fa_enabled") and admin_setup.get("two_fa_secret"):
-				totp = pyotp.TOTP(admin_setup["two_fa_secret"])
-				if totp.verify(twofa_code):
-					session["logged_in"] = True
-					session.pop("pending_2fa", None)
-					session.pop("temp_username", None)
-					flash("Login successful!", "success")
-					return redirect(url_for("admin"))
-				else:
-					flash("Invalid 2FA code!", "error")
-					return render_template("login.html", show_2fa=True)
-			else:
-				session.clear()
-				flash("2FA is not properly configured. Please login again.", "error")
-				return redirect(url_for("login"))
-
-		# First step of login - username/password verification
-		if username and password:
-			if username == admin_setup["username"] and check_password_hash(
-				admin_setup["password"], password
-			):
-				# Check if 2FA is properly enabled and configured
-				if admin_setup.get("two_fa_enabled") and admin_setup.get(
-					"two_fa_secret"
-				):
-					session["pending_2fa"] = True
-					session["temp_username"] = username
-					return render_template("login.html", show_2fa=True)
-				else:
-					# No 2FA needed, clear any 2FA session flags
-					session.pop("pending_2fa", None)
-					session.pop("temp_username", None)
-					session["logged_in"] = True
-					flash("Login successful!", "success")
-					return redirect(url_for("admin"))
-			else:
-				flash("Invalid credentials!", "error")
-		else:
-			flash("Username and password are required!", "error")
-
-	# GET request or form validation failed
-	show_2fa = session.get("pending_2fa", False)
-	return render_template("login.html", show_2fa=show_2fa)
-
-
-@app.route("/admin/2fa-setup", methods=["GET", "POST"])
-@login_required
-def setup_2fa():
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Use secret from session if present, else fallback to admin_setup (for legacy)
-	two_fa_secret = session.get("pending_2fa_secret") or admin_setup.get(
-		"two_fa_secret"
-	)
-	if not two_fa_secret:
-		return redirect(url_for("enable_2fa"))
-
-	# Handle POST: verify code or cancel 2FA
-	if request.method == "POST":
-		if request.form.get("cancel_2fa") == "1":
-			session.pop("pending_2fa_secret", None)
-			flash("Two-factor authentication setup was canceled.", "info")
-			return redirect(url_for("login"))
-		code = request.form.get("verify_2fa_code", "").strip()
-		totp = pyotp.TOTP(two_fa_secret)
-		if totp.verify(code):
-			# Save 2FA secret and enable 2FA only after verification
-			db_manager.complete_setup(
-				username=admin_setup["username"],
-				password=admin_setup["password"],
-				email=admin_setup["email"],
-				enable_2fa=True,
-				two_fa_secret=two_fa_secret,
-			)
-			session.pop("pending_2fa_secret", None)
-			flash("Two-factor authentication is now active and verified!", "success")
-			return redirect(url_for("admin"))
-		else:
-			flash("Invalid code. Please try again.", "danger")
-
-	provisioning_uri = pyotp.totp.TOTP(two_fa_secret).provisioning_uri(
-		name=admin_setup["email"], issuer_name="FlexaFlow CMS"
-	)
-	qr = pyqrcode.create(provisioning_uri)
-	buffer = io.BytesIO()
-	qr.svg(buffer, scale=5)
-	qr_code = base64.b64encode(buffer.getvalue()).decode()
-
-	return render_template("setup_2fa.html", qr_code=qr_code, secret=two_fa_secret)
-
-
-@app.route("/admin/disable-2fa")
-@login_required
-def disable_2fa():
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Update the admin setup to disable 2FA
-	success = db_manager.complete_setup(
-		username=admin_setup["username"],
-		password=admin_setup["password"],
-		email=admin_setup["email"],
-		enable_2fa=False,
-		two_fa_secret=None,
-	)
-
-	if success:
-		flash("Two-factor authentication has been disabled.", "success")
-	else:
-		flash("Failed to disable two-factor authentication.", "error")
-
-	return redirect(url_for("settings"))
-
-
-@app.route("/admin/enable-2fa")
-@login_required
-def enable_2fa():
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Generate new 2FA secret and store in session only
-	two_fa_secret = pyotp.random_base32()
-	session["pending_2fa_secret"] = two_fa_secret
-	flash(
-		"Two-factor authentication setup started. Please scan the QR code and verify.",
-		"success",
-	)
-	return redirect(url_for("setup_2fa"))
 
 
 # Helper functions for database operations
@@ -497,6 +343,47 @@ def add_category_to_db(name: str) -> bool:
 		db.close()
 
 
+def allowed_file(filename):
+	"""Check if the file type is allowed"""
+	ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+	return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+
+
+
+
+def validate_csrf_token():
+	token = request.headers.get("X-CSRF-Token")
+	if not token:
+		# Also check form data for CSRF token
+		token = request.form.get("csrf_token")
+	return token and token == session.get("csrf_token")
+
+
+
+
+
+
+#  ***********************  End helper functions ****************************
+#*
+#
+#
+#
+#
+#
+#
+#
+
+
+
+###
+
+
+
+
+
+
 @app.context_processor
 def inject_globals():
 	data = {"year": datetime.datetime.now().year}
@@ -514,6 +401,788 @@ def page_not_found(e):
 @app.errorhandler(500)
 def server_error(e):
 	return render_template("404.html", page={"title": "Error"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#  ***********************   FIRST TIME SETUP AND SETUP ADMIN ****************************
+#**************************
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+	if db_manager.is_setup_complete():
+		flash("Setup has already been completed.", "warning")
+		return redirect(url_for("login"))
+
+	if request.method == "POST":
+		username = request.form.get("username")
+		password = request.form.get("password")
+		confirm_password = request.form.get("confirm_password")
+		email = request.form.get("email")
+
+		if password != confirm_password:
+			flash("Passwords do not match.", "error")
+			return render_template("setup.html")
+
+		if len(password) < 8:
+			flash("Password must be at least 8 characters long.", "error")
+			return render_template("setup.html")
+
+		# Generate hashed password
+		hashed_password = generate_password_hash(password)
+
+		# Complete setup with 2FA disabled by default
+		success = db_manager.complete_setup(
+			username=username,
+			password=hashed_password,
+			email=email,
+			enable_2fa=False,
+			two_fa_secret=None,
+		)
+
+		if success:
+			flash("Setup completed successfully!", "success")
+			return redirect(url_for("login"))
+		else:
+			flash("Error during setup. Please try again.", "error")
+
+	return render_template("setup.html")
+
+
+#  ***********************   End FIRST TIME SETUP AND SETUP ADMIN ****************************
+#*
+
+
+
+#  ***********************   Start Login Logout ****************************
+#**************************
+@app.route("/login", methods=["GET", "POST"])
+@setup_required
+def login():
+	# Always clear any 2FA session flags on GET (fresh login page)
+	if request.method == "GET":
+		session.pop("pending_2fa", None)
+		session.pop("temp_username", None)
+		session.pop("logged_in", None)
+
+	if request.method == "POST":
+		username = request.form.get("username")
+		password = request.form.get("password")
+		twofa_code = request.form.get("2fa_code")
+
+		admin_setup = db_manager.get_admin_setup()
+		if not admin_setup:
+			flash("System is not properly configured.", "error")
+			return redirect(url_for("setup"))
+
+		# If we're in the 2FA verification step
+		if session.get("pending_2fa") and twofa_code:
+			if username != session.get("temp_username"):
+				session.clear()
+				flash("Invalid session. Please login again.", "error")
+				return redirect(url_for("login"))
+
+			if admin_setup.get("two_fa_enabled") and admin_setup.get("two_fa_secret"):
+				totp = pyotp.TOTP(admin_setup["two_fa_secret"])
+				if totp.verify(twofa_code):
+					session["logged_in"] = True
+					session.pop("pending_2fa", None)
+					session.pop("temp_username", None)
+					flash("Login successful!", "success")
+					return redirect(url_for("admin"))
+				else:
+					flash("Invalid 2FA code!", "error")
+					return render_template("login.html", show_2fa=True)
+			else:
+				session.clear()
+				flash("2FA is not properly configured. Please login again.", "error")
+				return redirect(url_for("login"))
+
+		# First step of login - username/password verification
+		if username and password:
+			if username == admin_setup["username"] and check_password_hash(
+				admin_setup["password"], password
+			):
+				# Check if 2FA is properly enabled and configured
+				if admin_setup.get("two_fa_enabled") and admin_setup.get(
+					"two_fa_secret"
+				):
+					session["pending_2fa"] = True
+					session["temp_username"] = username
+					return render_template("login.html", show_2fa=True)
+				else:
+					# No 2FA needed, clear any 2FA session flags
+					session.pop("pending_2fa", None)
+					session.pop("temp_username", None)
+					session["logged_in"] = True
+					flash("Login successful!", "success")
+					return redirect(url_for("admin"))
+			else:
+
+				flash("Invalid credentials!", "error")
+		else:
+			flash("Username and password are required!", "error")
+
+	# GET request or form validation failed
+	show_2fa = session.get("pending_2fa", False)
+	return render_template("login.html", show_2fa=show_2fa)
+
+
+
+
+
+@app.route("/logout")
+@login_required
+def logout():
+	session.clear()
+	flash("You have been logged out.", "info")
+	return redirect(url_for("login"))
+
+
+#  ***********************   End Login Logout ****************************
+#*
+
+
+
+
+
+
+
+#  ***********************   Start Administrator and  two-factor authentication configuration  ****************************
+#**************************
+
+@app.route("/admin")
+@login_required
+def admin():
+	# Get all pages (both published and draft)
+	all_pages = []
+	pages = get_pages()
+	draft_pages = get_draft_pages()
+
+	for slug, page in pages.items():
+		page_copy = page.copy()
+		page_copy["slug"] = slug
+		all_pages.append(page_copy)
+
+	for slug, page in draft_pages.items():
+		page_copy = page.copy()
+		page_copy["slug"] = slug
+		all_pages.append(page_copy)
+
+	# Get all posts (both published and draft)
+	all_posts = []
+	posts = get_posts()
+	draft_posts = get_draft_posts()
+
+	for slug, post in posts.items():
+		post_copy = post.copy()
+		post_copy["slug"] = slug
+		all_posts.append(post_copy)
+
+	for slug, post in draft_posts.items():
+		post_copy = post.copy()
+		post_copy["slug"] = slug
+		all_posts.append(post_copy)
+
+	return render_template("admin.html", pages=all_pages, posts=all_posts)
+
+
+
+
+
+
+@app.route("/admin/settings")
+@login_required
+def settings():
+	site_settings = get_site_settings()
+	admin_setup = db_manager.get_admin_setup()
+	# Ensure two_fa_enabled reflects the admin's real 2FA status
+	site_settings["two_fa_enabled"] = bool(
+		admin_setup and admin_setup.get("two_fa_enabled")
+	)
+	return render_template(
+		"settings.html",
+		settings=site_settings,
+		pages=get_pages(),
+		custom_analytics=os.getenv("CUSTOM_ANALYTICS_SCRIPT", ""),
+	)
+
+
+@app.route("/admin/menu")
+@login_required
+def menu_editor():
+	settings = get_site_settings()
+	menu_items = settings.get("menu_items", [])
+	return render_template("menu-editor.html", menu_items=menu_items, pages=get_pages())
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+@login_required
+def api_settings():
+	if request.method == "GET":
+		return jsonify(get_site_settings())
+	elif request.method == "POST":
+		data = request.json
+		success = update_site_settings(data)
+		if success:
+			return jsonify({"status": "success", "message": "Settings updated"})
+		else:
+			return (
+				jsonify({"status": "error", "message": "Failed to update settings"}),
+				500,
+			)
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/api/check_slug')
+@login_required
+def api_check_slug():
+	"""Check if a slug is available for posts or pages and return a suggested slug if taken."""
+	slug = request.args.get('slug', '').strip()
+	obj_type = request.args.get('type', 'post')
+	if not slug:
+		return jsonify({'unique': False, 'suggested_slug': ''})
+
+	def exists_in(collection):
+		if not isinstance(collection, dict):
+			return False
+		return slug in collection
+
+	taken = False
+	if obj_type == 'post':
+		taken = exists_in(get_posts()) or exists_in(get_draft_posts())
+	else:
+		taken = exists_in(get_pages()) or exists_in(get_draft_pages())
+
+	suggested = slug
+	if taken:
+		# append a short suffix until unique
+		base = re.sub(r"[^a-z0-9-]", '', slug.lower())
+		suffix = 2
+		while True:
+			candidate = f"{base}-{suffix}"
+			if obj_type == 'post':
+				if not (candidate in get_posts() or candidate in get_draft_posts()):
+					suggested = candidate
+					break
+			else:
+				if not (candidate in get_pages() or candidate in get_draft_pages()):
+					suggested = candidate
+					break
+			suffix += 1
+
+	return jsonify({'unique': not taken, 'suggested_slug': suggested})
+
+
+@app.route("/api/menu", methods=["GET", "POST"])
+@login_required
+def api_menu():
+	if request.method == "GET":
+		settings = get_site_settings()
+		return jsonify(settings.get("menu_items", []))
+	elif request.method == "POST":
+		data = request.json
+		settings = get_site_settings()
+		settings["menu_items"] = data
+		success = update_site_settings(settings)
+		if success:
+			return jsonify({"status": "success", "message": "Menu updated"})
+		else:
+			return jsonify({"status": "error", "message": "Failed to update menu"}), 500
+
+
+@app.route("/admin/category/add", methods=["POST"])
+@login_required
+def add_category():
+	name = request.form.get("name", "").strip()
+	if not name:
+		flash("Category name required!", "error")
+		return redirect(url_for("manage_tags_and_catagories"))
+	success = add_category_to_db(name)
+	if success:
+		flash("Category added successfully!", "success")
+	else:
+		flash("Error adding category! (Maybe already exists)", "error")
+	return redirect(url_for("manage_tags_and_catagories"))
+
+
+@app.route("/admin/media")
+@login_required
+def media_library():
+	page = max(1, int(request.args.get("page", 1)))
+	search = request.args.get("search")
+	media = db_manager.get_media_library(page=page, search=search)
+
+	# Return JSON if requested
+	if request.args.get("format") == "json":
+		return jsonify(media)
+
+	return render_template("media-library.html", media=media)
+
+
+@app.route("/admin/media/upload", methods=["POST"])
+@login_required
+def upload_media():
+	if "files[]" not in request.files:
+		return jsonify({"success": False, "error": "No file part"})
+
+	files = request.files.getlist("files[]")
+	results = []
+
+	for file in files:
+		if file.filename == "":
+			continue
+
+		if file:
+			try:
+				# Generate unique filename
+				original_filename = secure_filename(file.filename)
+				filename = str(uuid.uuid4()) + os.path.splitext(original_filename)[1]
+				file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+
+				# Save original file
+				file.save(file_path)
+
+				# Create thumbnails
+				thumbnails = create_image_thumbnails(file_path, filename)
+
+				# Get image dimensions and size
+				with Image.open(file_path) as img:
+					width, height = img.size
+
+				file_size = os.path.getsize(file_path)
+
+				# Add to media library
+				media_data = {
+					"filename": filename,
+					"original_filename": original_filename,
+					"mime_type": file.content_type,
+					"file_size": file_size,
+					"width": width,
+					"height": height,
+					"alt_text": os.path.splitext(original_filename)[0],
+					"caption": "",
+					"title": os.path.splitext(original_filename)[0],
+					"description": "",
+					"thumbnail": thumbnails.get("thumbnail"),
+				}
+
+				result = db_manager.add_media(media_data)
+				if result:
+					result["thumbnails"] = thumbnails
+					results.append({"success": True, "file": result})
+				else:
+					results.append(
+						{
+							"success": False,
+							"error": f"Failed to save {original_filename} to database",
+						}
+					)
+
+			except Exception as e:
+				results.append(
+					{
+						"success": False,
+						"error": f"Error processing {file.filename}: {str(e)}",
+					}
+				)
+
+	return jsonify({"success": True, "files": results})
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route("/admin/export", methods=["GET"])
+@login_required
+def export_content():
+	"""Export all posts and pages as XML"""
+	FLEXAFLOW_VERSION = "1.0.0"
+	export_time = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+	site_settings = get_site_settings()
+	site_title = site_settings.get("site_title", "site").strip().lower().replace(" ", "_")
+	# Compose filename: flexaflow(v1.0.0)_sitename_YYYYMMDDTHHMMSSZ.xml
+	timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+	filename = f"flexaflow_{FLEXAFLOW_VERSION}_export_{site_title}_{timestamp}.xml"
+
+	root = ET.Element("flexaflow_export", version="1.0", exported_at=export_time)
+
+	# Export pages
+	pages_elem = ET.SubElement(root, "pages")
+	for slug, page in get_pages().items():
+		page_elem = ET.SubElement(pages_elem, "page", slug=slug)
+		for k, v in page.items():
+			child = ET.SubElement(page_elem, k)
+			child.text = str(v) if v is not None else ""
+
+	# Export posts
+	posts_elem = ET.SubElement(root, "posts")
+	for slug, post in get_posts().items():
+		post_elem = ET.SubElement(posts_elem, "post", slug=slug)
+		for k, v in post.items():
+			if isinstance(v, list):
+				list_elem = ET.SubElement(post_elem, k)
+				for item in v:
+					item_elem = ET.SubElement(list_elem, "item")
+					item_elem.text = str(item)
+			else:
+				child = ET.SubElement(post_elem, k)
+				child.text = str(v) if v is not None else ""
+
+	# Serialize XML to memory
+	xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+	return send_file(
+		io.BytesIO(xml_bytes),
+		mimetype="application/xml",
+		as_attachment=True,
+		download_name=filename,
+	)
+
+
+@app.route("/admin/import", methods=["GET", "POST"])
+@login_required
+def import_content():
+	"""Import posts and pages from uploaded XML, skipping duplicates"""
+	if request.method == "POST":
+		file = request.files.get("file")
+		if not file or not file.filename.endswith(".xml"):
+			flash("Please upload a valid XML file.", "error")
+			return redirect(url_for("import_content"))
+		try:
+			tree = ET.parse(file)
+			root = tree.getroot()
+			# Get existing slugs
+			existing_page_slugs = set(get_pages().keys())
+			existing_post_slugs = set(get_posts().keys())
+			skipped_pages = []
+			skipped_posts = []
+			imported_pages = 0
+			imported_posts = 0
+			# Import pages
+			pages_elem = root.find("pages")
+			if pages_elem is not None:
+				for page_elem in pages_elem.findall("page"):
+					slug = page_elem.attrib.get("slug")
+					if not slug or slug in existing_page_slugs:
+						skipped_pages.append(slug)
+						continue
+					page_data = {child.tag: child.text for child in page_elem}
+					add_page(slug, page_data)
+					imported_pages += 1
+			# Import posts
+			posts_elem = root.find("posts")
+			if posts_elem is not None:
+				for post_elem in posts_elem.findall("post"):
+					slug = post_elem.attrib.get("slug")
+					if not slug or slug in existing_post_slugs:
+						skipped_posts.append(slug)
+						continue
+					post_data = {}
+					for child in post_elem:
+						if child.tag in ("tags",):
+							post_data[child.tag] = [item.text for item in child.findall("item")]
+						else:
+							post_data[child.tag] = child.text
+					add_post(slug, post_data)
+					imported_posts += 1
+			update_tag_counts()
+			msg = f"Import successful! Imported {imported_pages} pages and {imported_posts} posts."
+			if skipped_pages or skipped_posts:
+				msg += f" Skipped {len(skipped_pages)} pages and {len(skipped_posts)} posts due to duplicate slugs."
+			flash(msg, "success")
+		except Exception as e:
+			flash(f"Import failed: {e}", "error")
+		return redirect(url_for("admin"))
+	return render_template("import.html")
+
+
+
+
+
+
+
+
+
+
+
+@app.route("/admin/media/<int:media_id>", methods=["GET", "PUT", "DELETE"])
+@login_required
+def manage_media(media_id):
+	if request.method == "GET":
+		media = db_manager.get_media_by_id(media_id)
+		if media:
+			return jsonify(media)
+		return jsonify({"error": "Media not found"}), 404
+
+	elif request.method == "PUT":
+		data = request.json
+		success = db_manager.update_media(media_id, data)
+		if success:
+			return jsonify({"success": True})
+		return jsonify({"success": False, "error": "Update failed"}), 500
+
+	elif request.method == "DELETE":
+		success = db_manager.delete_media(media_id)
+		if success:
+			return jsonify({"success": True})
+		return jsonify({"success": False, "error": "Delete failed"}), 500
+
+
+@app.route("/admin/tags-and-catagories", methods=["GET", "POST"])
+@login_required
+def manage_tags_and_catagories():
+	categories = get_categories() or {}
+	tags = get_tags() or {}
+	unused_categories = {k: v for k, v in categories.items() if v.get("count", 0) == 0}
+	unused_tags = {k: v for k, v in tags.items() if v.get("count", 0) == 0}
+	return render_template(
+		"tags_and_catagories.html",
+		categories=categories,
+		tags=tags,
+		unused_categories=unused_categories,
+		unused_tags=unused_tags,
+	)
+
+
+@app.route("/admin/category/delete/<slug>", methods=["POST"])
+@login_required
+def delete_category(slug):
+	# Only allow deleting unused categories
+	categories = get_categories() or {}
+	if slug in categories and categories[slug].get("count", 0) == 0:
+		db = db_manager.get_session()
+		try:
+			category = db.query(Category).filter(Category.slug == slug).first()
+			if category:
+				db.delete(category)
+				db.commit()
+				flash("Category deleted.", "success")
+			else:
+				flash("Category not found.", "error")
+		except Exception as e:
+			db.rollback()
+			flash(f"Error deleting category: {e}", "error")
+		finally:
+			db.close()
+	else:
+		flash("Cannot delete category in use.", "error")
+	return redirect(url_for("manage_tags_and_catagories"))
+
+
+@app.route("/admin/tag/add", methods=["POST"])
+@login_required
+def add_tag():
+	name = request.form.get("name", "").strip()
+	if not name:
+		flash("Tag name required.", "error")
+		return redirect(url_for("manage_tags_and_catagories"))
+	db = db_manager.get_session()
+	try:
+		existing = db.query(Tag).filter(Tag.name == name).first()
+		if existing:
+			flash("Tag already exists.", "error")
+		else:
+			tag = Tag(name=name)
+			db.add(tag)
+			db.commit()
+			flash("Tag added.", "success")
+	except Exception as e:
+		db.rollback()
+		flash(f"Error adding tag: {e}", "error")
+	finally:
+		db.close()
+	return redirect(url_for("manage_tags_and_catagories"))
+
+
+@app.route("/admin/tag/delete/<int:tag_id>", methods=["POST"])
+@login_required
+def delete_tag(tag_id):
+	db = db_manager.get_session()
+	try:
+		tag = db.query(Tag).filter(Tag.id == tag_id).first()
+		if tag and tag.count == 0:
+			db.delete(tag)
+			db.commit()
+			flash("Tag deleted.", "success")
+		else:
+			flash("Cannot delete tag in use or not found.", "error")
+	except Exception as e:
+		db.rollback()
+		flash(f"Error deleting tag: {e}", "error")
+	finally:
+		db.close()
+	return redirect(url_for("manage_tags_and_catagories"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route("/admin/2fa-setup", methods=["GET", "POST"])
+@login_required
+def setup_2fa():
+	admin_setup = db_manager.get_admin_setup()
+	if not admin_setup:
+		flash("System is not properly configured.", "error")
+		return redirect(url_for("setup"))
+
+	# Use secret from session if present, else fallback to admin_setup (for legacy)
+	two_fa_secret = session.get("pending_2fa_secret") or admin_setup.get(
+		"two_fa_secret"
+	)
+	if not two_fa_secret:
+		return redirect(url_for("enable_2fa"))
+
+	# Handle POST: verify code or cancel 2FA
+	if request.method == "POST":
+		if request.form.get("cancel_2fa") == "1":
+			session.pop("pending_2fa_secret", None)
+			flash("Two-factor authentication setup was canceled.", "info")
+			return redirect(url_for("login"))
+		code = request.form.get("verify_2fa_code", "").strip()
+		totp = pyotp.TOTP(two_fa_secret)
+		if totp.verify(code):
+			# Save 2FA secret and enable 2FA only after verification
+			db_manager.complete_setup(
+				username=admin_setup["username"],
+				password=admin_setup["password"],
+				email=admin_setup["email"],
+				enable_2fa=True,
+				two_fa_secret=two_fa_secret,
+			)
+			session.pop("pending_2fa_secret", None)
+			flash("Two-factor authentication is now active and verified!", "success")
+			return redirect(url_for("admin"))
+		else:
+			flash("Invalid code. Please try again.", "danger")
+
+	provisioning_uri = pyotp.totp.TOTP(two_fa_secret).provisioning_uri(
+		name=admin_setup["email"], issuer_name="FlexaFlow CMS"
+	)
+	qr = pyqrcode.create(provisioning_uri)
+	buffer = io.BytesIO()
+	qr.svg(buffer, scale=5)
+	qr_code = base64.b64encode(buffer.getvalue()).decode()
+
+	return render_template("setup_2fa.html", qr_code=qr_code, secret=two_fa_secret)
+
+
+
+
+
+
+
+
+@app.route("/admin/disable-2fa")
+@login_required
+def disable_2fa():
+	admin_setup = db_manager.get_admin_setup()
+	if not admin_setup:
+		flash("System is not properly configured.", "error")
+		return redirect(url_for("setup"))
+
+	# Update the admin setup to disable 2FA
+	success = db_manager.complete_setup(
+		username=admin_setup["username"],
+		password=admin_setup["password"],
+		email=admin_setup["email"],
+		enable_2fa=False,
+		two_fa_secret=None,
+	)
+
+	if success:
+		flash("Two-factor authentication has been disabled.", "success")
+	else:
+		flash("Failed to disable two-factor authentication.", "error")
+
+	return redirect(url_for("settings"))
+
+
+@app.route("/admin/enable-2fa")
+@login_required
+def enable_2fa():
+	admin_setup = db_manager.get_admin_setup()
+	if not admin_setup:
+		flash("System is not properly configured.", "error")
+		return redirect(url_for("setup"))
+
+	# Generate new 2FA secret and store in session only
+	two_fa_secret = pyotp.random_base32()
+	session["pending_2fa_secret"] = two_fa_secret
+	flash(
+		"Two-factor authentication setup started. Please scan the QR code and verify.",
+		"success",
+	)
+	return redirect(url_for("setup_2fa"))
+
+
+#  ***********************   End Administrator and  two-factor authentication configuration  ****************************
+#*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#  *********************** Start Page and Post Serve  ****************************
+#**************************
 
 
 @app.route("/")
@@ -615,41 +1284,149 @@ def home():
 		)
 
 
-@app.route("/admin")
-@login_required
-def admin():
-	# Get all pages (both published and draft)
-	all_pages = []
-	pages = get_pages()
-	draft_pages = get_draft_pages()
 
-	for slug, page in pages.items():
-		page_copy = page.copy()
-		page_copy["slug"] = slug
-		all_pages.append(page_copy)
+@app.route("/post/<slug>")
+def view_post(slug):
+	post = get_post_by_slug(slug)
 
-	for slug, page in draft_pages.items():
-		page_copy = page.copy()
-		page_copy["slug"] = slug
-		all_pages.append(page_copy)
+	if not post:
+		abort(404)
 
-	# Get all posts (both published and draft)
-	all_posts = []
-	posts = get_posts()
-	draft_posts = get_draft_posts()
+	# Only show published posts to public (unless in admin mode)
+	if post.get("status") != "published":
+		# You can add admin authentication check here
+		# For now, we'll show drafts too
+		pass
 
-	for slug, post in posts.items():
-		post_copy = post.copy()
-		post_copy["slug"] = slug
-		all_posts.append(post_copy)
+	categories = get_categories()
+	tags = get_tags()
 
-	for slug, post in draft_posts.items():
-		post_copy = post.copy()
-		post_copy["slug"] = slug
-		all_posts.append(post_copy)
+	# Get related posts
+	related_posts = []
+	post_tags = post.get("tags", [])
+	all_posts = get_posts()
 
-	return render_template("admin.html", pages=all_pages, posts=all_posts)
+	for other_slug, other_post in all_posts.items():
+		if other_slug != slug and other_post.get("status") == "published":
+			other_tags = other_post.get("tags", [])
+			if set(post_tags) & set(other_tags):  # If there are common tags
+				other_post_copy = other_post.copy()
+				other_post_copy["slug"] = other_slug
+				related_posts.append(other_post_copy)
+				if len(related_posts) >= 3:
+					break
 
+	# Add slug to post for template
+	post["slug"] = slug
+
+	return render_template(
+		"post.html",
+		post=post,
+		related_posts=related_posts,
+		categories=categories,
+		tags=tags,
+	)
+
+
+@app.route("/category/<category_slug>")
+def view_category(category_slug):
+	categories = get_categories()
+	if category_slug in categories:
+		category_posts = []
+		all_posts = get_posts()
+
+		for slug, post in all_posts.items():
+			if (
+				post.get("category", {}).get("slug") == category_slug
+				and post.get("status") == "published"
+			):
+				post_copy = post.copy()
+				post_copy["slug"] = slug
+				category_posts.append(post_copy)
+
+		category_data = categories[category_slug]
+		category_data["count"] = len(category_posts)
+
+		return render_template(
+			"category.html", category=category_data, posts=category_posts
+		)
+	else:
+		abort(404)
+
+
+@app.route("/tag/<tag_name>")
+def view_tag(tag_name):
+	tagged_posts = []
+	all_posts = get_posts()
+
+	for slug, post in all_posts.items():
+		if tag_name in post.get("tags", []) and post.get("status") == "published":
+			post_copy = post.copy()
+			post_copy["slug"] = slug
+			tagged_posts.append(post_copy)
+
+	return render_template(
+		"tag.html",
+		tag={"name": tag_name, "count": len(tagged_posts)},
+		posts=tagged_posts,
+	)
+
+
+@app.route("/search")
+def search():
+	query = request.args.get("q", "")
+	search_results = []
+
+	if query:
+		all_posts = get_posts()
+		for slug, post in all_posts.items():
+			if post.get("status") == "published":
+				if (
+					query.lower() in post.get("title", "").lower()
+					or query.lower() in post.get("content", "").lower()
+					or query.lower() in post.get("excerpt", "").lower()
+					or query.lower() in ",".join(post.get("tags", [])).lower()
+				):
+					post_copy = post.copy()
+					post_copy["slug"] = slug
+					search_results.append(post_copy)
+
+	return render_template("search.html", query=query, results=search_results)
+
+
+
+
+
+
+#  *********************** End Page and Post Serve  ****************************
+#*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#  *********************** Start Page and Post CRUD  ****************************
+#**************************
 
 @app.route("/page/add", methods=["GET", "POST"])
 def add_page_route():
@@ -881,272 +1658,22 @@ def delete_post_route(slug):
 
 	return redirect(url_for("admin"))
 
-
-@app.route("/post/<slug>")
-def view_post(slug):
-	post = get_post_by_slug(slug)
-
-	if not post:
-		abort(404)
-
-	# Only show published posts to public (unless in admin mode)
-	if post.get("status") != "published":
-		# You can add admin authentication check here
-		# For now, we'll show drafts too
-		pass
-
-	categories = get_categories()
-	tags = get_tags()
-
-	# Get related posts
-	related_posts = []
-	post_tags = post.get("tags", [])
-	all_posts = get_posts()
-
-	for other_slug, other_post in all_posts.items():
-		if other_slug != slug and other_post.get("status") == "published":
-			other_tags = other_post.get("tags", [])
-			if set(post_tags) & set(other_tags):  # If there are common tags
-				other_post_copy = other_post.copy()
-				other_post_copy["slug"] = other_slug
-				related_posts.append(other_post_copy)
-				if len(related_posts) >= 3:
-					break
-
-	# Add slug to post for template
-	post["slug"] = slug
-
-	return render_template(
-		"post.html",
-		post=post,
-		related_posts=related_posts,
-		categories=categories,
-		tags=tags,
-	)
-
-
-@app.route("/category/<category_slug>")
-def view_category(category_slug):
-	categories = get_categories()
-	if category_slug in categories:
-		category_posts = []
-		all_posts = get_posts()
-
-		for slug, post in all_posts.items():
-			if (
-				post.get("category", {}).get("slug") == category_slug
-				and post.get("status") == "published"
-			):
-				post_copy = post.copy()
-				post_copy["slug"] = slug
-				category_posts.append(post_copy)
-
-		category_data = categories[category_slug]
-		category_data["count"] = len(category_posts)
-
-		return render_template(
-			"category.html", category=category_data, posts=category_posts
-		)
+@app.route("/<slug>")
+def view_page(slug):
+	page = get_page_by_slug(slug)
+	if page and page.get("status") == "published":
+		return render_template("main/master.html", page=page)
 	else:
 		abort(404)
 
 
-@app.route("/tag/<tag_name>")
-def view_tag(tag_name):
-	tagged_posts = []
-	all_posts = get_posts()
 
-	for slug, post in all_posts.items():
-		if tag_name in post.get("tags", []) and post.get("status") == "published":
-			post_copy = post.copy()
-			post_copy["slug"] = slug
-			tagged_posts.append(post_copy)
-
-	return render_template(
-		"tag.html",
-		tag={"name": tag_name, "count": len(tagged_posts)},
-		posts=tagged_posts,
-	)
+#  *********************** End Page and Post CRUD  ****************************
+#**************************
 
 
-@app.route("/search")
-def search():
-	query = request.args.get("q", "")
-	search_results = []
-
-	if query:
-		all_posts = get_posts()
-		for slug, post in all_posts.items():
-			if post.get("status") == "published":
-				if (
-					query.lower() in post.get("title", "").lower()
-					or query.lower() in post.get("content", "").lower()
-					or query.lower() in post.get("excerpt", "").lower()
-					or query.lower() in ",".join(post.get("tags", [])).lower()
-				):
-					post_copy = post.copy()
-					post_copy["slug"] = slug
-					search_results.append(post_copy)
-
-	return render_template("search.html", query=query, results=search_results)
 
 
-@app.route("/admin/settings")
-@login_required
-def settings():
-	site_settings = get_site_settings()
-	admin_setup = db_manager.get_admin_setup()
-	# Ensure two_fa_enabled reflects the admin's real 2FA status
-	site_settings["two_fa_enabled"] = bool(
-		admin_setup and admin_setup.get("two_fa_enabled")
-	)
-	return render_template(
-		"settings.html",
-		settings=site_settings,
-		pages=get_pages(),
-		custom_analytics=os.getenv("CUSTOM_ANALYTICS_SCRIPT", ""),
-	)
-
-
-@app.route("/admin/menu")
-@login_required
-def menu_editor():
-	settings = get_site_settings()
-	menu_items = settings.get("menu_items", [])
-	return render_template("menu-editor.html", menu_items=menu_items, pages=get_pages())
-
-
-@app.route("/api/settings", methods=["GET", "POST"])
-@login_required
-def api_settings():
-	if request.method == "GET":
-		return jsonify(get_site_settings())
-	elif request.method == "POST":
-		data = request.json
-		success = update_site_settings(data)
-		if success:
-			return jsonify({"status": "success", "message": "Settings updated"})
-		else:
-			return (
-				jsonify({"status": "error", "message": "Failed to update settings"}),
-				500,
-			)
-
-
-@app.route("/api/menu", methods=["GET", "POST"])
-@login_required
-def api_menu():
-	if request.method == "GET":
-		settings = get_site_settings()
-		return jsonify(settings.get("menu_items", []))
-	elif request.method == "POST":
-		data = request.json
-		settings = get_site_settings()
-		settings["menu_items"] = data
-		success = update_site_settings(settings)
-		if success:
-			return jsonify({"status": "success", "message": "Menu updated"})
-		else:
-			return jsonify({"status": "error", "message": "Failed to update menu"}), 500
-
-
-@app.route("/admin/category/add", methods=["POST"])
-@login_required
-def add_category():
-	name = request.form.get("name", "").strip()
-	if not name:
-		flash("Category name required!", "error")
-		return redirect(url_for("manage_tags_and_catagories"))
-	success = add_category_to_db(name)
-	if success:
-		flash("Category added successfully!", "success")
-	else:
-		flash("Error adding category! (Maybe already exists)", "error")
-	return redirect(url_for("manage_tags_and_catagories"))
-
-
-@app.route("/admin/media")
-@login_required
-def media_library():
-	page = max(1, int(request.args.get("page", 1)))
-	search = request.args.get("search")
-	media = db_manager.get_media_library(page=page, search=search)
-
-	# Return JSON if requested
-	if request.args.get("format") == "json":
-		return jsonify(media)
-
-	return render_template("media-library.html", media=media)
-
-
-@app.route("/admin/media/upload", methods=["POST"])
-@login_required
-def upload_media():
-	if "files[]" not in request.files:
-		return jsonify({"success": False, "error": "No file part"})
-
-	files = request.files.getlist("files[]")
-	results = []
-
-	for file in files:
-		if file.filename == "":
-			continue
-
-		if file:
-			try:
-				# Generate unique filename
-				original_filename = secure_filename(file.filename)
-				filename = str(uuid.uuid4()) + os.path.splitext(original_filename)[1]
-				file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-
-				# Save original file
-				file.save(file_path)
-
-				# Create thumbnails
-				thumbnails = create_image_thumbnails(file_path, filename)
-
-				# Get image dimensions and size
-				with Image.open(file_path) as img:
-					width, height = img.size
-
-				file_size = os.path.getsize(file_path)
-
-				# Add to media library
-				media_data = {
-					"filename": filename,
-					"original_filename": original_filename,
-					"mime_type": file.content_type,
-					"file_size": file_size,
-					"width": width,
-					"height": height,
-					"alt_text": os.path.splitext(original_filename)[0],
-					"caption": "",
-					"title": os.path.splitext(original_filename)[0],
-					"description": "",
-					"thumbnail": thumbnails.get("thumbnail"),
-				}
-
-				result = db_manager.add_media(media_data)
-				if result:
-					result["thumbnails"] = thumbnails
-					results.append({"success": True, "file": result})
-				else:
-					results.append(
-						{
-							"success": False,
-							"error": f"Failed to save {original_filename} to database",
-						}
-					)
-
-			except Exception as e:
-				results.append(
-					{
-						"success": False,
-						"error": f"Error processing {file.filename}: {str(e)}",
-					}
-				)
-
-	return jsonify({"success": True, "files": results})
 
 
 @app.context_processor
@@ -1156,12 +1683,15 @@ def inject_csrf_token():
 	return {"csrf_token": session["csrf_token"]}
 
 
-def validate_csrf_token():
-	token = request.headers.get("X-CSRF-Token")
-	if not token:
-		# Also check form data for CSRF token
-		token = request.form.get("csrf_token")
-	return token and token == session.get("csrf_token")
+
+
+
+
+
+
+
+#  *********************** Start Media Upload  ****************************
+#**************************
 
 
 @app.route("/upload_image", methods=["POST"])
@@ -1240,10 +1770,7 @@ def upload_image():
 		return jsonify({"error": str(e)}), 500
 
 
-def allowed_file(filename):
-	"""Check if the file type is allowed"""
-	ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-	return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 
 #@app.route("/uploads/<path:filename>")
@@ -1276,233 +1803,19 @@ def uploaded_file(filename):
 
 
 
-@app.route("/<slug>")
-def view_page(slug):
-	page = get_page_by_slug(slug)
-	if page and page.get("status") == "published":
-		return render_template("main/master.html", page=page)
-	else:
-		abort(404)
+#  *********************** End Media Upload  ****************************
+#*
 
 
-@app.route("/admin/media/<int:media_id>", methods=["GET", "PUT", "DELETE"])
-@login_required
-def manage_media(media_id):
-	if request.method == "GET":
-		media = db_manager.get_media_by_id(media_id)
-		if media:
-			return jsonify(media)
-		return jsonify({"error": "Media not found"}), 404
-
-	elif request.method == "PUT":
-		data = request.json
-		success = db_manager.update_media(media_id, data)
-		if success:
-			return jsonify({"success": True})
-		return jsonify({"success": False, "error": "Update failed"}), 500
-
-	elif request.method == "DELETE":
-		success = db_manager.delete_media(media_id)
-		if success:
-			return jsonify({"success": True})
-		return jsonify({"success": False, "error": "Delete failed"}), 500
 
 
-@app.route("/admin/tags-and-catagories", methods=["GET", "POST"])
-@login_required
-def manage_tags_and_catagories():
-	categories = get_categories() or {}
-	tags = get_tags() or {}
-	unused_categories = {k: v for k, v in categories.items() if v.get("count", 0) == 0}
-	unused_tags = {k: v for k, v in tags.items() if v.get("count", 0) == 0}
-	return render_template(
-		"tags_and_catagories.html",
-		categories=categories,
-		tags=tags,
-		unused_categories=unused_categories,
-		unused_tags=unused_tags,
-	)
 
 
-@app.route("/admin/category/delete/<slug>", methods=["POST"])
-@login_required
-def delete_category(slug):
-	# Only allow deleting unused categories
-	categories = get_categories() or {}
-	if slug in categories and categories[slug].get("count", 0) == 0:
-		db = db_manager.get_session()
-		try:
-			category = db.query(Category).filter(Category.slug == slug).first()
-			if category:
-				db.delete(category)
-				db.commit()
-				flash("Category deleted.", "success")
-			else:
-				flash("Category not found.", "error")
-		except Exception as e:
-			db.rollback()
-			flash(f"Error deleting category: {e}", "error")
-		finally:
-			db.close()
-	else:
-		flash("Cannot delete category in use.", "error")
-	return redirect(url_for("manage_tags_and_catagories"))
 
 
-@app.route("/admin/tag/add", methods=["POST"])
-@login_required
-def add_tag():
-	name = request.form.get("name", "").strip()
-	if not name:
-		flash("Tag name required.", "error")
-		return redirect(url_for("manage_tags_and_catagories"))
-	db = db_manager.get_session()
-	try:
-		existing = db.query(Tag).filter(Tag.name == name).first()
-		if existing:
-			flash("Tag already exists.", "error")
-		else:
-			tag = Tag(name=name)
-			db.add(tag)
-			db.commit()
-			flash("Tag added.", "success")
-	except Exception as e:
-		db.rollback()
-		flash(f"Error adding tag: {e}", "error")
-	finally:
-		db.close()
-	return redirect(url_for("manage_tags_and_catagories"))
 
 
-@app.route("/admin/tag/delete/<int:tag_id>", methods=["POST"])
-@login_required
-def delete_tag(tag_id):
-	db = db_manager.get_session()
-	try:
-		tag = db.query(Tag).filter(Tag.id == tag_id).first()
-		if tag and tag.count == 0:
-			db.delete(tag)
-			db.commit()
-			flash("Tag deleted.", "success")
-		else:
-			flash("Cannot delete tag in use or not found.", "error")
-	except Exception as e:
-		db.rollback()
-		flash(f"Error deleting tag: {e}", "error")
-	finally:
-		db.close()
-	return redirect(url_for("manage_tags_and_catagories"))
 
-
-@app.route("/logout")
-@login_required
-def logout():
-	session.clear()
-	flash("You have been logged out.", "info")
-	return redirect(url_for("login"))
-
-
-@app.route("/admin/export", methods=["GET"])
-@login_required
-def export_content():
-	"""Export all posts and pages as XML"""
-	FLEXAFLOW_VERSION = "1.0.0"
-	export_time = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-	site_settings = get_site_settings()
-	site_title = site_settings.get("site_title", "site").strip().lower().replace(" ", "_")
-	# Compose filename: flexaflow(v1.0.0)_sitename_YYYYMMDDTHHMMSSZ.xml
-	timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-	filename = f"flexaflow_{FLEXAFLOW_VERSION}_export_{site_title}_{timestamp}.xml"
-
-	root = ET.Element("flexaflow_export", version="1.0", exported_at=export_time)
-
-	# Export pages
-	pages_elem = ET.SubElement(root, "pages")
-	for slug, page in get_pages().items():
-		page_elem = ET.SubElement(pages_elem, "page", slug=slug)
-		for k, v in page.items():
-			child = ET.SubElement(page_elem, k)
-			child.text = str(v) if v is not None else ""
-
-	# Export posts
-	posts_elem = ET.SubElement(root, "posts")
-	for slug, post in get_posts().items():
-		post_elem = ET.SubElement(posts_elem, "post", slug=slug)
-		for k, v in post.items():
-			if isinstance(v, list):
-				list_elem = ET.SubElement(post_elem, k)
-				for item in v:
-					item_elem = ET.SubElement(list_elem, "item")
-					item_elem.text = str(item)
-			else:
-				child = ET.SubElement(post_elem, k)
-				child.text = str(v) if v is not None else ""
-
-	# Serialize XML to memory
-	xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-	return send_file(
-		io.BytesIO(xml_bytes),
-		mimetype="application/xml",
-		as_attachment=True,
-		download_name=filename,
-	)
-
-
-@app.route("/admin/import", methods=["GET", "POST"])
-@login_required
-def import_content():
-	"""Import posts and pages from uploaded XML, skipping duplicates"""
-	if request.method == "POST":
-		file = request.files.get("file")
-		if not file or not file.filename.endswith(".xml"):
-			flash("Please upload a valid XML file.", "error")
-			return redirect(url_for("import_content"))
-		try:
-			tree = ET.parse(file)
-			root = tree.getroot()
-			# Get existing slugs
-			existing_page_slugs = set(get_pages().keys())
-			existing_post_slugs = set(get_posts().keys())
-			skipped_pages = []
-			skipped_posts = []
-			imported_pages = 0
-			imported_posts = 0
-			# Import pages
-			pages_elem = root.find("pages")
-			if pages_elem is not None:
-				for page_elem in pages_elem.findall("page"):
-					slug = page_elem.attrib.get("slug")
-					if not slug or slug in existing_page_slugs:
-						skipped_pages.append(slug)
-						continue
-					page_data = {child.tag: child.text for child in page_elem}
-					add_page(slug, page_data)
-					imported_pages += 1
-			# Import posts
-			posts_elem = root.find("posts")
-			if posts_elem is not None:
-				for post_elem in posts_elem.findall("post"):
-					slug = post_elem.attrib.get("slug")
-					if not slug or slug in existing_post_slugs:
-						skipped_posts.append(slug)
-						continue
-					post_data = {}
-					for child in post_elem:
-						if child.tag in ("tags",):
-							post_data[child.tag] = [item.text for item in child.findall("item")]
-						else:
-							post_data[child.tag] = child.text
-					add_post(slug, post_data)
-					imported_posts += 1
-			update_tag_counts()
-			msg = f"Import successful! Imported {imported_pages} pages and {imported_posts} posts."
-			if skipped_pages or skipped_posts:
-				msg += f" Skipped {len(skipped_pages)} pages and {len(skipped_posts)} posts due to duplicate slugs."
-			flash(msg, "success")
-		except Exception as e:
-			flash(f"Import failed: {e}", "error")
-		return redirect(url_for("admin"))
-	return render_template("import.html")
 
 
 if __name__ == "__main__":
@@ -1515,3 +1828,5 @@ if __name__ == "__main__":
 	# Run the application
 	app.run(port=port, debug=debug)
 	print(f"Server is running on http://127.0.0.1:{port}")
+
+
