@@ -17,18 +17,18 @@ FlexaFlow is a modern, enterprise-grade Content Management System built with Pyt
 
 </div>
 
-## 🌟 Highlights
+## Highlights
 
-- **⚡️ Lightning Fast**: Built for performance with optimized database queries
-- **🔒 Enterprise Security**: Two-factor authentication, CSRF protection, and more
-- **📱 Mobile-First**: Responsive design that works on all devices
-- **🎨 Theme System**: Easy-to-customize theming with Jinja2 templates
-- **🔌 Custom Architecture**: Extensible system for custom functionality
-- **📊 Analytics**: Built-in support for Google Analytics and custom tracking
+- **Lightning Fast**: Built for performance with optimized database queries
+- **2FA Security**: Two-factor authentication, CSRF protection, and more
+- **Mobile-First**: Responsive design that works on all devices
+- **Theme System**: Easy-to-customize theming with Jinja2 templates
+- **Custom Architecture**: Extensible system for custom functionality
+- **Analytics**: Built-in support for Google Analytics and custom tracking
 
-## ✨ Features
+## Features
 
-### 📝 Content Management
+### Content Management
 - **Pages & Posts**
   - Create and manage static pages and dynamic blog posts
   - Draft system with preview functionality
@@ -39,13 +39,13 @@ FlexaFlow is a modern, enterprise-grade Content Management System built with Pyt
   - Table management
   - Embedded media support
 
-### 🖼️ Media Management
+### Media Management
 - **Advanced Media Library**
   - Image optimization
   - Automatic thumbnail generation
   
 
-### 🔐 Security Features
+### Security Features
 - **Two-Factor Authentication (2FA) ..Google Authenticator supports**
   - Multiple authenticator app support
   - QR code / manual key entry
@@ -54,7 +54,7 @@ FlexaFlow is a modern, enterprise-grade Content Management System built with Pyt
 
 
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -99,54 +99,9 @@ FlexaFlow is a modern, enterprise-grade Content Management System built with Pyt
 
 Visit http://localhost:5000/setup to complete installation.
 
-## 📁 Project Structure
 
-```
-├── app.py
-├── data_store.py
-├── requirements.txt
-├── static
-│   ├── flexaflow.ico
-│   └── flexaflow.png
-├── templates
-│   ├── add_page.html
-│   ├── add_post.html
-│   ├── admin.html
-│   ├── edit_page.html
-│   ├── edit_post.html
-│   ├── login.html
-│   ├── media-library.html
-│   ├── menu-editor.html
-│   ├── page.html
-│   ├── post.html
-│   ├── preview.html
-│   ├── settings.html
-│   ├── setup_2fa.html
-│   ├── setup.html
-│   └── tags_and_catagories.html
-├── themes
-│   └── default
-│       ├── functions
-│       │   └── custom-function.py
-│       └── templates
-│           ├── 404.html
-│           ├── category.html
-│           ├── main
-│           │   ├── contact-form.html
-│           │   ├── footer.html
-│           │   ├── header.html
-│           │   └── master.html
-│           ├── post.html
-│           ├── search.html
-│           ├── single-page.html
-│           └── tag.html
-├── uploads
-│   └── thumbnails
-└── utils
-    └── theme_loader.py
-```
 
-## 🔧 Configuration
+##  Configuration
 
 ### Database Setup
 
@@ -164,7 +119,7 @@ DATABASE_URL=postgresql://user:password@localhost/dbname
 ```
 
 
-## 🎨 Theming
+## Theming
 
 FlexaFlow uses a powerful theming system:
 
@@ -190,17 +145,17 @@ FlexaFlow uses a powerful theming system:
 
 
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
 
 
-## 🌐 Hosting & Deployment
+## Hosting & Deployment
 
 FlexaFlow CMS can be deployed on various hosting platforms. Here are our recommended options:
 
-### 🏆 Recommended Hosting Platforms
+### Recommended Hosting Platforms
 
 #### **[PythonAnywhere](https://www.pythonanywhere.com/)** ⭐ *Best Overall*
 - **Perfect for beginners and professionals**
@@ -228,7 +183,7 @@ FlexaFlow CMS can be deployed on various hosting platforms. Here are our recomme
 
 
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 ### Lead Developer
 - [Mashiur Rahman](https://github.com/01one) - Creator and lead developer of FlexaFlow CMS
