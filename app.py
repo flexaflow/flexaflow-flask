@@ -25,7 +25,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from jinja2 import Environment, FileSystemLoader, ChoiceLoader
+from jinja2 import Environment, FileSystemLoader, ChoiceLoader, select_autoescape
 from utils.theme_loader import load_theme_functions
 from functools import wraps
 import pyotp
@@ -102,8 +102,42 @@ app.jinja_loader = ChoiceLoader(
 	]
 )
 
+
+
+
+
+
+
+
+
+
+
+
+
 site_settings = get_site_settings()
+#print(site_settings)
 THEME_NAME = site_settings.get("theme", "default")
+
+
+
+
+
+
+
+@app.context_processor
+def inject_globals():
+	data = {"year": datetime.datetime.now().year}
+	for name, func in theme_functions.items():
+		data[name] = func
+	data["settings"] = get_site_settings()
+	return data
+
+
+
+
+
+
+
 UPLOAD_DIR = "uploads"
 
 # Add WordPress-like image sizes
@@ -384,13 +418,6 @@ def validate_csrf_token():
 
 
 
-@app.context_processor
-def inject_globals():
-	data = {"year": datetime.datetime.now().year}
-	for name, func in theme_functions.items():
-		data[name] = func
-	data["settings"] = get_site_settings()
-	return data
 
 
 @app.errorhandler(404)
@@ -404,7 +431,11 @@ def server_error(e):
 
 
 
-
+@app.context_processor
+def inject_csrf_token():
+	if "csrf_token" not in session:
+		session["csrf_token"] = secrets.token_hex(16)
+	return {"csrf_token": session["csrf_token"]}
 
 
 
@@ -1247,6 +1278,8 @@ def home():
 			),
 		}
 
+
+
 		return render_template(
 			"main/master.html",
 			page=default_page,
@@ -1347,7 +1380,7 @@ def view_category(category_slug):
 		category_data = categories[category_slug]
 		category_data["count"] = len(category_posts)
 
-		return render_template(
+		return render_remplate(
 			"category.html", category=category_data, posts=category_posts
 		)
 	else:
@@ -1676,11 +1709,7 @@ def view_page(slug):
 
 
 
-@app.context_processor
-def inject_csrf_token():
-	if "csrf_token" not in session:
-		session["csrf_token"] = secrets.token_hex(16)
-	return {"csrf_token": session["csrf_token"]}
+
 
 
 
