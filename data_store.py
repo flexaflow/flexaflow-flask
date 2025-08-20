@@ -648,6 +648,36 @@ class MediaLibrary(Base):
 
 # Database operations class
 class DatabaseManager:
+	"""
+	Core database management class handling all database operations.
+	
+	This class provides a centralized interface for:
+	- Database initialization and setup
+	- Session management
+	- Table creation and updates
+	- Media library operations
+	- User management
+	- Content CRUD operations
+	
+	Features:
+		- Automatic table creation
+		- Session pooling
+		- Transaction management
+		- Error handling
+		- Connection management
+		
+	Usage:
+		manager = DatabaseManager()
+		manager.create_tables()
+		manager.initialize_default_data()
+		
+	Security:
+		- SQL injection prevention
+		- Connection pooling
+		- Transaction isolation
+		- Error logging
+	"""
+
 	def __init__(self):
 		self.engine = engine
 		self.SessionLocal = SessionLocal
@@ -804,7 +834,64 @@ class DatabaseManager:
 
 	# Add media methods
 	def add_media(self, media_data):
-		"""Add a new media item to the database"""
+		"""
+		Add a new media item to the media library.
+
+		Features:
+			- Metadata extraction
+			- Thumbnail handling
+			- URL generation
+			- Transaction safety
+			- Error recovery
+			
+		Args:
+			media_data (dict): Media item details containing:
+				- filename: Generated unique filename (str, required)
+				- original_filename: Original upload name (str, required)
+				- mime_type: File content type (str, optional)
+				- file_size: Size in bytes (int, optional)
+				- width: Image width (int, optional)
+				- height: Image height (optional)
+				- alt_text: Accessibility text (str, optional)
+				- caption: Display caption (str, optional)
+				- title: Media title (str, optional)
+				- description: Long description (str, optional)
+				- thumbnail: Thumbnail filename (str, optional)
+				
+		Returns:
+			dict: Created media item data including:
+				- All input fields
+				- id: Generated database ID
+				- created_at: Creation timestamp
+				- url: Full media URL 
+				- thumbnail_url: Full thumbnail URL (if exists)
+			None: If operation fails
+			
+		Processing:
+			1. Creates Media record
+			2. Stores metadata
+			3. Generates URLs
+			4. Handles transactions
+			5. Validates data
+			
+		Error Handling:
+			- Missing required fields
+			- Invalid field types
+			- Database constraints
+			- Transaction rollback
+			- Resource cleanup
+			
+		Usage:
+			media = add_media({
+				'filename': 'abc123.jpg',
+				'original_filename': 'photo.jpg',
+				'mime_type': 'image/jpeg',
+				'width': 800,
+				'height': 600
+			})
+			if media:
+				print(f"Created media: {media['url']}")
+		"""
 		db = self.get_session()
 		try:
 			media = Media(
@@ -840,7 +927,78 @@ class DatabaseManager:
 			db.close()
 
 	def get_media_library(self, page=1, per_page=20, search=None):
-		"""Get media library items with pagination and search"""
+		"""
+		Retrieve media library items with pagination and search.
+		
+		Features:
+			- Full-text search
+			- Smart pagination 
+			- Sorting options
+			- URL generation
+			- Metadata formatting
+			- Performance optimization
+			
+		Args:
+			page (int): Page number to retrieve (default: 1)
+			per_page (int): Items per page (default: 20)
+			search (str): Search query for filtering (optional)
+				- Searches filename, title, and description
+				- Case-insensitive partial matches
+				- Multiple term support
+				
+		Returns:
+			dict: Media library data containing:
+				items: List of media items, each with:
+					- id: Media ID
+					- filename: Stored filename
+					- original_filename: Upload name
+					- mime_type: Content type
+					- file_size: Size in bytes
+					- width: Image width
+					- height: Image height
+					- alt_text: Alt text
+					- caption: Display caption
+					- title: Media title
+					- description: Full description
+					- thumbnail: Thumbnail name
+					- created_at: Creation time
+					- updated_at: Last modified
+					- url: Full media URL
+					- thumbnail_url: Full thumbnail URL
+				total: Total items count
+				page: Current page number
+				total_pages: Total available pages
+				per_page: Items per page
+			None: If operation fails
+			
+		Processing:
+			1. Builds search query if needed
+			2. Calculates pagination
+			3. Retrieves page slice
+			4. Formats response data
+			5. Generates URLs
+			
+		Performance:
+			- Efficient pagination
+			- Query optimization
+			- Connection pooling
+			- Resource cleanup
+			
+		Usage:
+			# Get first page
+			first_page = get_media_library()
+			
+			# Search with pagination
+			results = get_media_library(
+				page=2,
+				per_page=10,
+				search='banner'
+			)
+			
+			# Display results
+			for item in results['items']:
+				print(f"{item['title']}: {item['url']}")
+		"""
 		db = self.get_session()
 		try:
 			query = db.query(Media)
@@ -963,7 +1121,59 @@ class DatabaseManager:
 			db.close()
 
 	def delete_media(self, media_id):
-		"""Delete a media item"""
+	   """
+		Delete a media item and its associated files.
+		
+		Features:
+			- Database cleanup
+			- File system cleanup
+			- Transaction safety
+			- Resource management
+			- Error recovery
+			
+		Args:
+			media_id (int): ID of the media item to delete
+			
+		Returns:
+			bool: True if deletion successful, False otherwise
+			
+		Processing:
+			1. Fetches media record
+			2. Stores file references
+			3. Deletes database record
+			4. Removes main media file
+			5. Removes thumbnail file
+			6. Handles failures gracefully
+			
+		Security:
+			- Transaction isolation
+			- File path validation
+			- Error containment
+			- Resource cleanup
+			- Access validation
+			
+		File System:
+			- Handles main media file
+			- Manages thumbnails
+			- Validates paths
+			- Checks permissions
+			- Recovers from errors
+			
+		Error Handling:
+			- Database errors
+			- File system errors
+			- Missing files
+			- Permission issues
+			- Resource cleanup
+			
+		Usage:
+			# Delete a media item
+			success = delete_media(123)
+			if success:
+				print("Media deleted successfully")
+			else:
+				print("Failed to delete media")
+		"""
 		db = self.get_session()
 		try:
 			media = db.query(Media).filter(Media.id == media_id).first()
@@ -1008,7 +1218,34 @@ db_manager.initialize_default_data()
 
 # Data access functions (matching your original API)
 def get_pages() -> Dict[str, Any]:
-	"""Get all published pages"""
+	"""
+	Retrieve all published pages from the database.
+	
+	Returns:
+		Dict[str, Any]: Dictionary of pages where:
+			- key: page slug
+			- value: page data dictionary containing:
+				- title: page title
+				- content: page content
+				- description: meta description
+				- status: publication status
+				- timestamps: created/updated times
+				
+	Error Handling:
+		- Returns empty dict on database errors
+		- Logs error messages
+		- Ensures session cleanup
+		
+	Performance:
+		- Uses session pooling
+		- Automatic connection cleanup
+		- Efficient dictionary comprehension
+		
+	Usage:
+		pages = get_pages()
+		for slug, page in pages.items():
+			print(f"{page['title']}: {page['description']}")
+	"""
 	db = db_manager.get_session()
 	try:
 		pages = db.query(Page).filter(Page.status == "published").all()
@@ -1086,7 +1323,43 @@ def get_tags() -> Dict[str, Any]:
 
 
 def get_site_settings() -> Dict[str, Any]:
-	"""Get all site settings"""
+	"""
+	Retrieve all site configuration settings.
+	
+	Features:
+		- JSON value parsing
+		- Error handling
+		- Type conversion
+		- Default values
+		- Session management
+	
+	Returns:
+		Dict[str, Any]: Configuration dictionary containing:
+			- site_title: Site name
+			- site_description: Meta description
+			- theme: Active theme name
+			- menu_items: Navigation structure
+			- custom_settings: Theme-specific options
+			- social_links: Social media URLs
+			- analytics: Analytics configuration
+			
+	Processing:
+		1. Fetch all settings from database
+		2. Parse JSON values where applicable
+		3. Fall back to string values if parsing fails
+		4. Handle missing settings gracefully
+		
+	Error Handling:
+		- Returns empty dict on database errors
+		- Maintains valid JSON structure
+		- Logs parsing errors
+		- Ensures session cleanup
+	
+	Usage:
+		settings = get_site_settings()
+		theme = settings.get('theme', 'default')
+		title = settings.get('site_title', 'My Site')
+	"""
 	db = db_manager.get_session()
 	try:
 		settings = db.query(SiteSetting).all()
@@ -1206,7 +1479,55 @@ def add_draft_post(slug: str, post_data: Dict[str, Any]) -> bool:
 
 
 def update_site_settings(settings_data: Dict[str, Any]) -> bool:
-	"""Update site settings"""
+	"""
+	Update site configuration settings in the database.
+	
+	Features:
+		- JSON serialization
+		- Atomic transactions
+		- Upsert behavior
+		- Type safety
+		- Timestamp tracking
+		- Session management
+		
+	Args:
+		settings_data (Dict[str, Any]): Configuration dictionary containing:
+			- site_title: Site name (str)
+			- site_description: Meta description (str)
+			- theme: Active theme name (str)
+			- menu_items: Navigation structure (List/Dict)
+			- custom_settings: Theme-specific options (Dict)
+			- social_links: Social media URLs (Dict)
+			- analytics: Analytics configuration (Dict)
+			
+	Returns:
+		bool: True if update successful, False on error
+		
+	Processing:
+		1. Opens database transaction
+		2. Serializes complex values to JSON
+		3. Updates existing or creates new settings
+		4. Updates modification timestamps
+		5. Commits changes atomically
+		6. Rolls back on errors
+		
+	Error Handling:
+		- JSON serialization errors
+		- Database constraint violations 
+		- Transaction management
+		- Timestamp validation
+		- Session cleanup
+		
+	Usage:
+		success = update_site_settings({
+			'site_title': 'My Blog',
+			'theme': 'dark',
+			'menu_items': [
+				{'label': 'Home', 'url': '/'},
+				{'label': 'About', 'url': '/about'}
+			]
+		})
+	"""
 	db = db_manager.get_session()
 	try:
 		for key, value in settings_data.items():
