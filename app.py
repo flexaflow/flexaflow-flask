@@ -197,7 +197,7 @@ def inject_globals():
 
 UPLOAD_DIR = "uploads"
 
-# Add WordPress-like image sizes
+# Image sizes for fit in multiple place
 IMAGE_SIZES = {"thumbnail": (150, 150), "medium": (300, 300), "large": (1024, 1024)}
 
 if not os.path.exists(UPLOAD_DIR):
@@ -642,7 +642,7 @@ def validate_csrf_token():
 
 
 
-
+# Error management and error pages
 
 @app.errorhandler(404)
 def page_not_found(e):
