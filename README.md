@@ -4,7 +4,6 @@
 
 <img src="static/flexaflow.png" alt="FlexaFlow CMS" width="200"/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-2.0%2B-green)](https://flask.palletsprojects.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-1.4%2B-red)](https://www.sqlalchemy.org/)
