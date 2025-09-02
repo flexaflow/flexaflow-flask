@@ -1121,7 +1121,7 @@ class DatabaseManager:
 			db.close()
 
 	def delete_media(self, media_id):
-	   """
+		"""
 		Delete a media item and its associated files.
 		
 		Features:
