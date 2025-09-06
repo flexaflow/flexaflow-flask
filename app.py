@@ -30,7 +30,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from jinja2 import Environment, FileSystemLoader, ChoiceLoader, select_autoescape
-from utils.theme_loader import load_theme_functions
+from utils.theme_loader import load_theme_functions,copy_theme_static_files
 from functools import wraps
 import pyotp
 from dotenv import load_dotenv
@@ -208,6 +208,7 @@ if not os.path.exists(os.path.join(UPLOAD_DIR, "thumbnails")):
 
 # Load theme functions
 theme_functions = load_theme_functions(THEME_NAME)
+copy_theme_static_files(THEME_NAME)
 
 # app.secret_key = os.getenv('SECRET_KEY', 'dev_key_change_in_production')
 app.secret_key = secrets.token_hex(32)
