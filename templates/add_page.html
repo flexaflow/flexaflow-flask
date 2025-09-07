@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add New Page</title>
     <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
     <script src="https://cdn.jsdelivr.net/npm/tinymce@5/tinymce.min.js"></script>
     <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
@@ -22,16 +23,16 @@
                 xhr = new XMLHttpRequest();
                 xhr.withCredentials = false;
                 xhr.open('POST', '/upload_image');
-                
+
                 // Add CSRF token header
                 var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
                 xhr.setRequestHeader('X-CSRF-Token', csrfToken);
-                
-                xhr.upload.onprogress = function(e) {
+
+                xhr.upload.onprogress = function (e) {
                     progress(e.loaded / e.total * 100);
                 };
-                
-                xhr.onload = function() {
+
+                xhr.onload = function () {
                     var json;
                     if (xhr.status === 403) {
                         failure('CSRF token validation failed');
@@ -52,22 +53,22 @@
                         failure('Invalid JSON: ' + xhr.responseText);
                     }
                 };
-                
-                xhr.onerror = function() {
+
+                xhr.onerror = function () {
                     failure('Image upload failed');
                 };
-                
+
                 formData = new FormData();
                 formData.append('file', blobInfo.blob(), blobInfo.filename());
                 formData.append('csrf_token', csrfToken);
                 xhr.send(formData);
             },
-            setup: function(editor) {
+            setup: function (editor) {
                 editor.ui.registry.addButton('gallery', {
                     text: 'Gallery',
                     icon: 'gallery',
-                    onAction: function() {
-                        openMediaSelector(function(imageUrl) {
+                    onAction: function () {
+                        openMediaSelector(function (imageUrl) {
                             editor.insertContent('<img src="' + imageUrl + '" alt="">');
                         });
                     }
@@ -147,6 +148,7 @@
         }
     </script>
 </head>
+
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container">
@@ -159,40 +161,46 @@
 
     <div class="container mt-4">
         <div class="row">
-            <div class="col-md-8">
+            <div">
                 <div class="card">
                     <div class="card-body">
                         <h2 class="card-title">Add New Page</h2>
                         <form method="post" id="addForm">
                             <div class="form-group">
                                 <label for="slug">URL Slug</label>
-                                <input type="text" id="slug" name="slug" class="form-control" required pattern="[a-z0-9-]+" 
+                                <input type="text" id="slug" name="slug" class="form-control" required
+                                    pattern="[a-z0-9-]+"
                                     title="Only lowercase letters, numbers, and hyphens are allowed">
-                                <small class="form-text text-muted">This will be the URL of your page. Use only lowercase letters, numbers, and hyphens.</small>
+                                <small class="form-text text-muted">This will be the URL of your page. Use only
+                                    lowercase letters, numbers, and hyphens.</small>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="title">Page Title</label>
                                 <input type="text" id="title" name="title" class="form-control" required>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="description">Page Description</label>
-                                <textarea id="description" name="description" class="form-control" rows="2" required></textarea>
-                                <small class="form-text text-muted">A brief description of the page content. This may be used in search results and social sharing.</small>
+                                <textarea id="description" name="description" class="form-control" rows="2"
+                                    required></textarea>
+                                <small class="form-text text-muted">A brief description of the page content. This may be
+                                    used in search results and social sharing.</small>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="content">Page Content</label>
                                 <textarea id="editor" name="content" class="form-control"></textarea>
                             </div>
 
                             <input type="hidden" name="status" id="pageStatus" value="draft">
-                            
+
                             <div class="d-flex justify-content-between align-items-center mt-4">
                                 <div class="btn-group">
-                                    <button type="button" class="btn btn-primary" onclick="submitForm('published')">Publish</button>
-                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save as Draft</button>
+                                    <button type="button" class="btn btn-primary"
+                                        onclick="submitForm('published')">Publish</button>
+                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save
+                                        as Draft</button>
                                 </div>
                                 <button type="button" class="btn btn-info" onclick="previewDraft()">Preview</button>
                             </div>
@@ -200,40 +208,14 @@
                     </div>
                 </div>
             </div>
-            
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Quick Tips</h5>
-                    </div>
-                    <div class="card-body">
-                        <ul class="list-unstyled">
-                            <li class="mb-3">
-                                <strong>URL Slug:</strong><br>
-                                Use descriptive keywords for better SEO
-                            </li>
-                            <li class="mb-3">
-                                <strong>Title:</strong><br>
-                                Keep it concise and meaningful
-                            </li>
-                            <li class="mb-3">
-                                <strong>Description:</strong><br>
-                                Write a compelling summary in 2-3 sentences
-                            </li>
-                        </ul>
-                        <hr>
-                        <p class="mb-0">
-                            <strong>Save as Draft</strong> to continue editing later<br>
-                            <strong>Publish</strong> to make the page visible to visitors
-                        </p>
-                    </div>
-                </div>
-            </div>
+
+
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.4.4/dist/umd/popper.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
+    <script src="/static/bootstrap-and-related/popper.min.js"></script>
+    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
 </body>
+
 </html>
