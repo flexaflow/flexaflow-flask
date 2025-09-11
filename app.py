@@ -2172,7 +2172,7 @@ def home():
 		)
 
 		categories = get_categories()
-		print(get_categories())
+		#print(get_categories())
 		if not isinstance(categories, dict):
 			categories = {}
 
