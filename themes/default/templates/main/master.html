@@ -630,7 +630,7 @@
                                     {% for cat_slug, category in categories.items() %}
                                     <a href="/category/{{ cat_slug }}" class="category-link">
                                         <span>{{ category.name }}</span>
-                                        <span class="badge badge-light">{{ category.count if category.count is defined
+                                        <span class="badge badge-light">{{ category.post_count if category.post_count is defined
                                             else 0 }}</span>
                                     </a>
                                     {% endfor %}
