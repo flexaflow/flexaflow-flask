@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Post</title>
     <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    
+
     <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
     <script src="https://cdn.jsdelivr.net/npm/tinymce@5/tinymce.min.js"></script>
     <meta name="csrf-token" content="{{ csrf_token }}">
@@ -23,16 +24,16 @@
                 xhr = new XMLHttpRequest();
                 xhr.withCredentials = false;
                 xhr.open('POST', '/upload_image');
-                
+
                 // Add CSRF token header
                 var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
                 xhr.setRequestHeader('X-CSRF-Token', csrfToken);
-                
-                xhr.upload.onprogress = function(e) {
+
+                xhr.upload.onprogress = function (e) {
                     progress(e.loaded / e.total * 100);
                 };
-                
-                xhr.onload = function() {
+
+                xhr.onload = function () {
                     var json;
                     if (xhr.status === 403) {
                         failure('CSRF token validation failed');
@@ -53,22 +54,22 @@
                         failure('Invalid JSON: ' + xhr.responseText);
                     }
                 };
-                
-                xhr.onerror = function() {
+
+                xhr.onerror = function () {
                     failure('Image upload failed');
                 };
-                
+
                 formData = new FormData();
                 formData.append('file', blobInfo.blob(), blobInfo.filename());
                 formData.append('csrf_token', csrfToken);
                 xhr.send(formData);
             },
-            setup: function(editor) {
+            setup: function (editor) {
                 editor.ui.registry.addButton('gallery', {
                     text: 'Gallery',
                     icon: 'gallery',
-                    onAction: function() {
-                        openMediaSelector(function(imageUrl) {
+                    onAction: function () {
+                        openMediaSelector(function (imageUrl) {
                             editor.insertContent('<img src="' + imageUrl + '" alt="">');
                         });
                     }
@@ -125,10 +126,10 @@
                 .then(data => callback(data));
         }
 
-        $(document).ready(function() {
-            $('#slug').on('blur', function() {
+        $(document).ready(function () {
+            $('#slug').on('blur', function () {
                 const slug = $(this).val();
-                checkSlugUnique(slug, 'post', function(data) {
+                checkSlugUnique(slug, 'post', function (data) {
                     if (!data.unique) {
                         $('#slug').val(data.suggested_slug);
                         $('#slug-message').text(`Slug already exists. Suggested: ${data.suggested_slug}`).show();
@@ -137,10 +138,10 @@
                     }
                 });
             });
-            $('#editForm').on('submit', function(e) {
+            $('#editForm').on('submit', function (e) {
                 const slug = $('#slug').val();
                 let valid = true;
-                checkSlugUnique(slug, 'post', function(data) {
+                checkSlugUnique(slug, 'post', function (data) {
                     if (!data.unique) {
                         $('#slug').val(data.suggested_slug);
                         $('#slug-message').text(`Slug already exists. Suggested: ${data.suggested_slug}`).show();
@@ -152,6 +153,7 @@
         });
     </script>
 </head>
+
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container">
@@ -171,12 +173,14 @@
                         <form method="post" id="editForm" enctype="multipart/form-data">
                             <div class="form-group">
                                 <label for="title">Post Title</label>
-                                <input type="text" id="title" name="title" class="form-control" value="{{ post['title'] }}" required>
+                                <input type="text" id="title" name="title" class="form-control"
+                                    value="{{ post['title'] }}" required>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="description">Post Description</label>
-                                <textarea id="description" name="description" class="form-control" rows="2" required>{{ post['description'] }}</textarea>
+                                <textarea id="description" name="description" class="form-control" rows="2"
+                                    required>{{ post['description'] }}</textarea>
                             </div>
 
                             <div class="form-group">
@@ -184,7 +188,8 @@
                                 <select id="category" name="category" class="form-control">
                                     <option value="">Select Category</option>
                                     {% for cat_slug, category in categories.items() %}
-                                    <option value="{{ cat_slug }}" {% if post.get('category') == cat_slug %}selected{% endif %}>
+                                    <option value="{{ cat_slug }}" {% if post.get('category')==cat_slug %}selected{%
+                                        endif %}>
                                         {{ category.name }}
                                     </option>
                                     {% endfor %}
@@ -193,28 +198,27 @@
 
                             <div class="form-group">
                                 <label for="tags">Tags</label>
-                                <input type="text" id="tags" name="tags" class="form-control" 
-                                       value="{{ ','.join(post.get('tags', [])) }}" 
-                                       placeholder="Enter tags separated by commas">
-                                <small class="form-text text-muted">Separate tags with commas (e.g., news, technology, tips)</small>
+                                <input type="text" id="tags" name="tags" class="form-control"
+                                    value="{{ ','.join(post.get('tags', [])) }}"
+                                    placeholder="Enter tags separated by commas">
+                                <small class="form-text text-muted">Separate tags with commas (e.g., news, technology,
+                                    tips)</small>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="content">Post Content</label>
-                                <textarea id="editor" name="content" class="form-control">{{ post['content'] }}</textarea>
+                                <textarea id="editor" name="content"
+                                    class="form-control">{{ post['content'] }}</textarea>
                             </div>
+                            <input type="hidden" name="status" id="postStatus"
+                                value="{{ post.get('status', 'draft') }}">
 
-                            <div class="form-group">
-                                <label for="featured_image">Featured Image</label>
-                                <input type="file" id="featured_image" name="featured_image" class="form-control">
-                            </div>
-
-                            <input type="hidden" name="status" id="postStatus" value="{{ post.get('status', 'draft') }}">
-                            
                             <div class="d-flex justify-content-between align-items-center mt-4">
                                 <div class="btn-group">
-                                    <button type="button" class="btn btn-primary" onclick="submitForm('published')">Publish</button>
-                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save as Draft</button>
+                                    <button type="button" class="btn btn-primary"
+                                        onclick="submitForm('published')">Publish</button>
+                                    <button type="button" class="btn btn-secondary" onclick="submitForm('draft')">Save
+                                        as Draft</button>
                                 </div>
                                 <a href="/post/{{ slug }}" target="_blank" class="btn btn-info">View Post</a>
                             </div>
@@ -222,7 +226,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="col-md-4">
                 <div class="card mb-4">
                     <div class="card-header">
@@ -230,8 +234,9 @@
                     </div>
                     <div class="card-body">
                         <p>
-                            <strong>Current Status:</strong> 
-                            <span class="badge badge-{{ 'success' if post.get('status') == 'published' else 'warning' }}">
+                            <strong>Current Status:</strong>
+                            <span
+                                class="badge badge-{{ 'success' if post.get('status') == 'published' else 'warning' }}">
                                 {{ post.get('status', 'draft').title() }}
                             </span>
                         </p>
@@ -285,7 +290,8 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="insertSelectedMedia()">Insert Selected</button>
+                    <button type="button" class="btn btn-primary" onclick="insertSelectedMedia()">Insert
+                        Selected</button>
                 </div>
             </div>
         </div>
@@ -298,22 +304,26 @@
             gap: 1rem;
             padding: 1rem;
         }
+
         .media-item {
             border: 1px solid #ddd;
             border-radius: 4px;
             padding: 0.5rem;
             cursor: pointer;
         }
+
         .media-item img {
             width: 100%;
             height: 100px;
             object-fit: cover;
             border-radius: 4px;
         }
+
         .media-item .info {
             margin-top: 0.5rem;
             font-size: 0.8rem;
         }
+
         .selected-media {
             border: 3px solid #0d6efd;
         }
@@ -325,9 +335,10 @@
             document.getElementById('editForm').submit();
         }
     </script>
-    
+
     <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
     <script src="/static/bootstrap-and-related/popper.min.js"></script>
     <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
 </body>
+
 </html>
