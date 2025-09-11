@@ -1292,7 +1292,7 @@ def add_category():
 		- SQL injection prevention
 	"""	
 	name = request.form.get("name", "").strip()
-	print("category name on add" ,name)
+	#print("category name on add" ,name)
 	if not name:
 		flash("Category name required!", "error")
 		return redirect(url_for("manage_tags_and_catagories"))
