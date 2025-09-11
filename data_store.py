@@ -1,7 +1,7 @@
 # FlexaFlow CMS Database Layer
 # 
 # Author: Mashiur Rahman
-# Last Updated: August 20, 2025
+# Last Updated: September 11, 2025
 
 import os
 import json
@@ -802,7 +802,7 @@ class DatabaseManager:
 				"site_description": "A powerful CMS",
 				"favicon": "/static/flexaflow.ico",
 				"logo": "/static/flexaflow.png",
-				"google_analytics": "",
+				"custom_analytics": "",
 				"homepage": "home",
 				"privacy_page": "",
 				"terms_page": "",
@@ -1529,6 +1529,7 @@ def update_site_settings(settings_data: Dict[str, Any]) -> bool:
 		})
 	"""
 	db = db_manager.get_session()
+	print(settings_data,"database")
 	try:
 		for key, value in settings_data.items():
 			setting = db.query(SiteSetting).filter(SiteSetting.key == key).first()

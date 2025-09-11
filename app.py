@@ -1,11 +1,11 @@
 # FlexaFlow Flask CMS
 # 
 # Author: Mashiur Rahman
-# Last Updated: September 6, 2025
+# Last Updated: September 11, 2025
 
 #  ***********************  Start Standard And Installed library Import ****************************
 #**************************
-
+from pprint import pprint
 import os
 import re
 import uuid
@@ -1071,8 +1071,7 @@ def settings():
 	return render_template(
 		"settings.html",
 		settings=site_settings,
-		pages=get_pages(),
-		custom_analytics=os.getenv("CUSTOM_ANALYTICS_SCRIPT", ""),
+		pages=get_pages()
 	)
 
 
@@ -1293,6 +1292,7 @@ def add_category():
 		- SQL injection prevention
 	"""	
 	name = request.form.get("name", "").strip()
+	print("category name on add" ,name)
 	if not name:
 		flash("Category name required!", "error")
 		return redirect(url_for("manage_tags_and_catagories"))
@@ -2131,6 +2131,7 @@ def home():
 
 		published_posts = []
 		posts = get_posts()
+		
 
 		if not isinstance(posts, dict):
 			posts = {}
@@ -2171,6 +2172,7 @@ def home():
 		)
 
 		categories = get_categories()
+		print(get_categories())
 		if not isinstance(categories, dict):
 			categories = {}
 
@@ -2182,7 +2184,7 @@ def home():
 		}
 
 
-
+		#pprint(posts)
 		return render_template(
 			"main/master.html",
 			page=default_page,
@@ -2868,6 +2870,7 @@ def edit_post(slug):
 		description = request.form.get("description")
 		content = request.form.get("content")
 		category = request.form.get("category")
+		print("category from edit post", category)
 		tag_list = request.form.get("tags", "")
 		status = request.form.get("status", "draft")
 

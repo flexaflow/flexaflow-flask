@@ -15,14 +15,10 @@
 
 
 
-    {% if settings.google_analytics %}
-    <script async src="https://www.googletagmanager.com/gtag/js?id={{ settings.google_analytics }}"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
-        gtag('config', '{{ settings.google_analytics }}');
-    </script>
+    {% if settings.custom_analytics %}
+
+    {{ settings.custom_analytics | safe }}
+
     {% endif %}
 
     <style>
@@ -630,7 +626,8 @@
                                     {% for cat_slug, category in categories.items() %}
                                     <a href="/category/{{ cat_slug }}" class="category-link">
                                         <span>{{ category.name }}</span>
-                                        <span class="badge badge-light">{{ category.post_count if category.post_count is defined
+                                        <span class="badge badge-light">{{ category.post_count if category.post_count is
+                                            defined
                                             else 0 }}</span>
                                     </a>
                                     {% endfor %}

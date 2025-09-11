@@ -148,12 +148,8 @@
                 <div class="settings-section">
                     <h4>Analytics</h4>
                     <div class="form-group">
-                        <label class="settings-label">Google Analytics ID</label>
-                        <input type="text" class="form-control" name="google_analytics" value="{{ settings.google_analytics }}" placeholder="UA-XXXXXXXXX-X or G-XXXXXXXXXX">
-                    </div>
-                    <div class="form-group">
                         <label class="settings-label">Custom Analytics Script</label>
-                        <textarea class="form-control" name="custom_analytics" rows="6" placeholder="Paste your analytics script here (e.g., Google Analytics, Plausible, etc.)">{{ custom_analytics }}</textarea>
+                        <textarea class="form-control" name="custom_analytics" rows="6" placeholder="Paste your analytics script here (e.g., Google Analytics, Plausible, etc.)">{{ settings.custom_analytics }}</textarea>
                         <small>Paste your complete analytics tracking code here. It will be inserted in the header of your site.</small>
                     </div>
                 </div>
