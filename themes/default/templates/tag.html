@@ -5,7 +5,8 @@
     <div class="d-flex align-items-center justify-content-between">
         <div>
             <h1 class="mb-2">#{{ tag.name }}</h1>
-            <p class="lead mb-0">{{ tag.count }} post{% if tag.count != 1 %}s{% endif %} tagged with "{{ tag.name }}"</p>
+            <p class="lead mb-0">{{ tag.count }} post{% if tag.count != 1 %}s{% endif %} tagged with "{{ tag.name }}"
+            </p>
         </div>
         <div class="tag-icon">
             <i class="fas fa-tag fa-3x text-muted opacity-25"></i>
@@ -15,30 +16,30 @@
 
 <div class="blog-posts">
     {% if posts %}
-        {% for post in posts %}
-        <article class="blog-post">
-            <h2 class="h3"><a href="/post/{{ post.slug }}" class="text-dark">{{ post.title }}</a></h2>
-            <div class="post-meta">
-                <span><i class="far fa-calendar"></i> {{ post.created_at|truncate(10, true, '') }}</span>
-                {% if post.author %}
-                <span class="ml-3"><i class="far fa-user"></i> {{ post.author }}</span>
-                {% endif %}
-                {% if post.category %}
-                <span class="ml-3"><i class="far fa-folder"></i> 
-                    <a href="/category/{{ post.category }}" class="text-muted">
-                        {{ categories[post.category].name if categories and post.category in categories else post.category }}
-                    </a>
-                </span>
-                {% endif %}
-            </div>
-            <div class="post-excerpt">{{ post.description }}</div>
-            <a href="/post/{{ post.slug }}" class="read-more">Read More <i class="fas fa-arrow-right ml-1"></i></a>
-        </article>
-        {% endfor %}
-    {% else %}
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle mr-2"></i> No posts found with this tag.
+    {% for post in posts %}
+    <article class="blog-post">
+        <h2 class="h3"><a href="/post/{{ post.slug }}" class="text-dark">{{ post.title }}</a></h2>
+        <div class="post-meta">
+            <span><i class="far fa-calendar"></i> {{ post.created_at|truncate(10, true, '') }}</span>
+            {% if post.author %}
+            <span class="ml-3"><i class="far fa-user"></i> {{ post.author }}</span>
+            {% endif %}
+            {% if post.category %}
+            <span class="ml-3"><i class="far fa-folder"></i>
+                <a href="/category/{{ post.category.slug }}" class="text-muted">
+                    {{ post.category.name }}
+                </a>
+            </span>
+            {% endif %}
         </div>
+        <div class="post-excerpt">{{ post.description }}</div>
+        <a href="/post/{{ post.slug }}" class="read-more">Read More <i class="fas fa-arrow-right ml-1"></i></a>
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle mr-2"></i> No posts found with this tag.
+    </div>
     {% endif %}
 </div>
 {% endblock %}
