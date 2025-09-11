@@ -30,7 +30,7 @@
                 <ul class="list-group">
                     {% for slug, cat in categories.items() %}
                     <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <span><strong>{{ cat.name }}</strong> ({{ cat.count or 0 }})</span>
+                        <span><strong>{{ cat.name }}</strong> ({{ cat.post_count or 0 }})</span>
                         {% if slug in unused_categories %}
                         <form method="post" action="/admin/category/delete/{{ slug }}" style="display:inline;">
                             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused category?')">Delete</button>
