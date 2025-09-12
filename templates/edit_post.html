@@ -188,13 +188,16 @@
                                 <select id="category" name="category" class="form-control">
                                     <option value="">Select Category</option>
                                     {% for cat_slug, category in categories.items() %}
-                                    <option value="{{ cat_slug }}" {% if post.get('category')==cat_slug %}selected{%
-                                        endif %}>
+                                    <option value="{{ cat_slug }}" {% if post.category and post.category.slug==cat_slug
+                                        %}selected{% endif %}>
                                         {{ category.name }}
                                     </option>
                                     {% endfor %}
                                 </select>
                             </div>
+
+
+
 
                             <div class="form-group">
                                 <label for="tags">Tags</label>
