@@ -41,22 +41,6 @@
         {{ post.content|safe }}
     </div>
 
-    <div class="social-share">
-        <h5 class="mb-3">Share this post</h5>
-        <a href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ request.protocol }}://{{ request.host }}/post/{{ post.slug }}"
-            target="_blank" class="share-button share-twitter">
-            <i class="fab fa-twitter mr-2"></i> Share on Twitter
-        </a>
-        <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.protocol }}://{{ request.host }}/post/{{ post.slug }}"
-            target="_blank" class="share-button share-facebook">
-            <i class="fab fa-facebook-f mr-2"></i> Share on Facebook
-        </a>
-        <a href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.protocol }}://{{ request.host }}/post/{{ post.slug }}&title={{ post.title|urlencode }}"
-            target="_blank" class="share-button share-linkedin">
-            <i class="fab fa-linkedin-in mr-2"></i> Share on LinkedIn
-        </a>
-    </div>
-
     {% if post.tags %}
     <div class="tags mt-5">
         <h5 class="mb-3">Tags</h5>
