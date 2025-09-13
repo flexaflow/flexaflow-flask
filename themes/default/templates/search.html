@@ -34,9 +34,7 @@
                 {% endif %}
                 {% if post.category %}
                 <span class="ml-3"><i class="far fa-folder"></i> 
-                    <a href="/category/{{ post.category }}" class="text-muted">
-                        {{ categories[post.category].name if categories and post.category in categories else post.category }}
-                    </a>
+                <a href="/category/{{ post.category.slug }}" class="text-muted">{{ post.category.name }}</a>
                 </span>
                 {% endif %}
                 {% if post.tags %}
