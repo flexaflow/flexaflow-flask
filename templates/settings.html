@@ -144,6 +144,16 @@
                         </small>
                     </div>
                 </div>
+
+
+                    <!-- START: Site Domain Field -->
+                    <div class="form-group">
+                        <label class="settings-label">Site Domain</label>
+                        <input type="url" class="form-control" name="site_domain" value="{{ settings.get('site_domain', '') }}" placeholder="https://www.example.com">
+                        <small>Enter the full public URL of your website (e.g., https://www.yourdomain.com). This is used for generating sitemaps and other absolute links.</small>
+                    </div>
+                    <!-- END: Site Domain Field -->
+
                 <!-- Analytics -->
                 <div class="settings-section">
                     <h4>Analytics</h4>

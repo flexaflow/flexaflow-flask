@@ -1,7 +1,7 @@
 # FlexaFlow CMS Database Layer
 # 
 # Author: Mashiur Rahman
-# Last Updated: September 11, 2025
+# Last Updated: September 13, 2025
 
 import os
 import json
@@ -94,6 +94,40 @@ post_tags = Table(
 	Column("post_id", Integer, ForeignKey("posts.id"), primary_key=True),
 	Column("tag_id", Integer, ForeignKey("tags.id"), primary_key=True),
 )
+
+
+
+
+
+
+
+
+class Sitemap(Base):
+	"""
+	Model for storing the generated XML sitemap.
+	
+	This table is designed to be a singleton (hold only one entry).
+	
+	Attributes:
+		id (int): Primary key.
+		content (str): The full XML content of the sitemap.
+		updated_at (datetime): Timestamp of the last update.
+	"""
+	__tablename__ = "sitemaps"
+
+	id = Column(Integer, primary_key=True)
+	content = Column(Text, nullable=False)
+	updated_at = Column(
+		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+	)
+
+
+
+
+
+
+
+
 
 
 # Media Model
@@ -803,6 +837,7 @@ class DatabaseManager:
 				"favicon": "/static/flexaflow.ico",
 				"logo": "/static/flexaflow.png",
 				"custom_analytics": "",
+				"site_domain": "",
 				"homepage": "home",
 				"privacy_page": "",
 				"terms_page": "",
@@ -1210,6 +1245,52 @@ class DatabaseManager:
 			db.close()
 
 
+
+	def get_sitemap_content(self) -> Optional[str]:
+		"""Retrieves the sitemap XML content from the database."""
+		db = self.get_session()
+		try:
+			sitemap = db.query(Sitemap).first()
+			return sitemap.content if sitemap else None
+		except SQLAlchemyError as e:
+			print(f"Error getting sitemap: {str(e)}")
+			return None
+		finally:
+			db.close()
+
+
+
+	def update_sitemap_content(self, xml_content: str) -> bool:
+		"""Updates or creates the sitemap entry in the database."""
+		db = self.get_session()
+		try:
+			sitemap = db.query(Sitemap).first()
+			if sitemap:
+				# Update existing entry
+				sitemap.content = xml_content
+				sitemap.updated_at = datetime.datetime.utcnow()
+			else:
+				# Create new entry
+				sitemap = Sitemap(content=xml_content)
+				db.add(sitemap)
+			db.commit()
+			return True
+		except SQLAlchemyError as e:
+			db.rollback()
+			print(f"Error updating sitemap: {str(e)}")
+			return False
+		finally:
+			db.close()
+
+
+
+
+
+
+
+
+
+
 # Initialize database manager
 db_manager = DatabaseManager()
 db_manager.create_tables()
@@ -1367,7 +1448,7 @@ def get_site_settings() -> Dict[str, Any]:
 		for setting in settings:
 			try:
 				# Try to parse JSON values
-				value = json.loads(setting.value) if setting.value else None
+				value = json.loads(setting.value) if setting.value else ""
 			except (json.JSONDecodeError, TypeError):
 				value = setting.value
 			result[setting.key] = value
@@ -1557,6 +1638,24 @@ def update_site_settings(settings_data: Dict[str, Any]) -> bool:
 		return False
 	finally:
 		db.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def update_tag_counts() -> Dict[str, Any]:

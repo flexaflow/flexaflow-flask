@@ -1,7 +1,7 @@
 # FlexaFlow Flask CMS
 # 
 # Author: Mashiur Rahman
-# Last Updated: September 11, 2025
+# Last Updated: September 13, 2025
 
 #  ***********************  Start Standard And Installed library Import ****************************
 #**************************
@@ -26,6 +26,7 @@ from flask import (
 	flash,
 	abort,
 	session,
+	make_response,
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -621,6 +622,57 @@ def validate_csrf_token():
 
 
 
+
+# app.py
+
+def generate_and_store_sitemap():
+	"""
+	Generates the sitemap XML and stores it in the dedicated sitemaps table.
+	"""
+	try:
+
+		site_settings = get_site_settings()
+		base_url = site_settings.get("site_domain") or ""
+		base_url = base_url.strip()
+		print("base url:", base_url)
+		if not base_url:
+			#print("Warning: site_domain not set. Sitemap URLs may be incorrect.")
+			return
+			#base_url = request.url_root.strip()
+
+		if base_url.endswith('/'):
+			base_url = base_url[:-1]
+		
+		pages_data = []
+
+		# Add published posts
+		posts = get_posts()
+		for slug, post in posts.items():
+			if post.get("status") == "published":
+				pages_data.append({
+					"loc": f"{base_url}/post/{slug}",
+					"lastmod": post.get('updated_at', '').split('T')[0]
+				})
+
+		# Add published pages
+		public_pages = get_pages()
+		for slug, page in public_pages.items():
+			if page.get("status") == "published":
+				pages_data.append({
+					"loc": f"{base_url}/{slug}",
+					"lastmod": page.get('updated_at', '').split('T')[0]
+				})
+
+		sitemap_xml = render_template("sitemap.xml", pages=pages_data)
+
+		
+		# Use the new dedicated database method
+		db_manager.update_sitemap_content(sitemap_xml)
+		print("Sitemap successfully updated in the database.")
+		return True
+	except Exception as e:
+		print(f"Error generating sitemap: {str(e)}")
+		return False
 
 
 
@@ -3160,6 +3212,37 @@ def uploaded_file(filename):
 
 #  *********************** End Media Upload  ****************************
 #*
+
+
+
+
+
+
+
+# ************************** Start Stitemap ************************
+
+@app.route('/sitemap.xml')
+def sitemap():
+	"""
+	Serves the pre-generated sitemap from the dedicated sitemaps table.
+	"""
+	sitemap_xml = db_manager.get_sitemap_content()
+	
+	if not sitemap_xml:
+		# Sitemap has not been generated yet, create it now.
+		print("generating sitemap")
+		sitemap_task=generate_and_store_sitemap()
+		if not sitemap_task:
+			return '<!-- Sitemap not available -->'
+		sitemap_xml = db_manager.get_sitemap_content() or '<!-- Sitemap not available -->'
+
+	response = make_response(sitemap_xml)
+	response.headers["Content-Type"] = "application/xml"
+	return response
+#*******************************End sitemap route********************'
+
+
+
 
 
 
