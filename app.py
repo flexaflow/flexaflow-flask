@@ -2577,6 +2577,7 @@ def add_page_route():
 			success = add_draft_page(slug, page_data)
 
 		if success:
+			generate_and_store_sitemap()
 			flash("Page added successfully!", "success")
 		else:
 			flash("Error adding page!", "error")
@@ -2841,8 +2842,11 @@ def add_post_route():
 
 			if status == "published":
 				success = add_post(slug, post_data)
+				
 			else:
 				success = add_draft_post(slug, post_data)
+				
+			generate_and_store_sitemap()
 
 			if success:
 				update_tag_counts()
@@ -2959,6 +2963,7 @@ def edit_post(slug):
 
 
 @app.route("/post/delete/<slug>")
+@login_required
 def delete_post_route(slug):
 	"""
 	Handles deletion of blog posts.
@@ -2992,6 +2997,7 @@ def delete_post_route(slug):
 	success = delete_post_by_slug(slug)
 	if success:
 		update_tag_counts()
+		generate_and_store_sitemap()
 		flash("Post deleted successfully!", "success")
 	else:
 		flash("Error deleting post!", "error")
