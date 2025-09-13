@@ -2525,6 +2525,7 @@ def search():
 #**************************
 
 @app.route("/page/add", methods=["GET", "POST"])
+@login_required
 def add_page_route():
 	"""
 	Handles page creation with support for drafts and publishing.
