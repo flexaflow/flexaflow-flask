@@ -2587,6 +2587,7 @@ def add_page_route():
 
 	return render_template("add_page.html")
 @app.route("/page/edit/<slug>", methods=["GET", "POST"])
+@login_required
 def edit_page(slug):
 	"""
 	Handles editing of existing pages.
