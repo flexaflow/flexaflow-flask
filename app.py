@@ -1,13 +1,14 @@
 # FlexaFlow Flask CMS
 # 
 # Author: Mashiur Rahman
-# Last Updated: September 13, 2025
+# Last Updated: April 1 , 2026
 
 #  ***********************  Start Standard And Installed library Import ****************************
 #**************************
 from pprint import pprint
 import os
 import re
+import unicodedata
 import uuid
 import json
 import datetime
@@ -232,19 +233,20 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 #  ***********************  start helper functions ****************************
 #**************************
-def slugify(title):
-	"""
-	Convert a string title into a URL-friendly slug.
+def slugify(title: str) -> str:
+    if not title:
+        return ""
 
-	Args:
-		title (str): The title to slugify.
+    # Normalize (important)
+    title = unicodedata.normalize("NFKC", title)
 
-	Returns:
-		str: The slugified string.
-	"""
-	# Lowercase, remove special chars, replace spaces with dashes
-	slug = re.sub(r"[^\w\s-]", "", title).strip().lower()
-	return re.sub(r"[-\s]+", "-", slug)
+    # Keep letters, marks, numbers, space, dash
+    slug = re.sub(r"[^\w\s\-\u0980-\u09FF]", "", title)
+
+    slug = slug.strip().lower()
+    slug = re.sub(r"[-\s]+", "-", slug)
+
+    return slug
 
 
 def create_image_thumbnails(image_path: str, filename: str) -> Dict[str, str]:
