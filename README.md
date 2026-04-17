@@ -12,7 +12,7 @@
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-1.4%2B-red)](https://www.sqlalchemy.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-FlexaFlow is a modern, enterprise-grade Content Management System built with Python Flask, designed for performance, security, and extensibility.
+
 
 
 
