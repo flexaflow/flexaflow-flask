@@ -1,7 +1,3 @@
-# FlexaFlow CMS Database Layer
-# 
-# Author: Mashiur Rahman
-# Last Updated: September 13, 2025
 
 import os
 import json
@@ -19,32 +15,29 @@ from sqlalchemy import (
 	ForeignKey,
 	Table,
 	event,
+	inspect,
+	text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Database configuration
 ENV = os.getenv("FLASK_ENV", "development")
 if ENV == "production":
 	DATABASE_URL = os.getenv("DATABASE_URL", "mysql://user:password@localhost/cms_db")
 else:
-	# Use SQLite for development/testing
 	DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///cms.db")
 
-# Configure SQLAlchemy engine based on database type
 if DATABASE_URL.startswith("sqlite"):
 	engine = create_engine(
 		DATABASE_URL,
-		connect_args={"check_same_thread": False},  # Needed for SQLite
+		connect_args={"check_same_thread": False},
 		echo=False,
 	)
 else:
-	# MySQL configuration
 	engine = create_engine(
 		DATABASE_URL, echo=False, pool_size=5, max_overflow=10, pool_timeout=30
 	)
@@ -52,7 +45,6 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Association table for post-tag many-to-many relationship
 """
 Association table managing the many-to-many relationship between posts and tags.
 
@@ -96,10 +88,26 @@ post_tags = Table(
 )
 
 
+def decode_fields(raw: Optional[str]) -> Dict[str, Any]:
+	"""Decode the JSON custom-field blob stored on a page (always returns a dict)."""
+	if not raw:
+		return {}
+	try:
+		value = json.loads(raw)
+		return value if isinstance(value, dict) else {}
+	except (TypeError, ValueError):
+		return {}
 
 
-
-
+def decode_json_list(raw: Optional[str]) -> List[Any]:
+	"""Decode a JSON list stored in a text column (always returns a list)."""
+	if not raw:
+		return []
+	try:
+		value = json.loads(raw)
+		return value if isinstance(value, list) else []
+	except (TypeError, ValueError):
+		return []
 
 
 class Sitemap(Base):
@@ -122,15 +130,6 @@ class Sitemap(Base):
 	)
 
 
-
-
-
-
-
-
-
-
-# Media Model
 class Media(Base):
 	"""
 	Media Model for storing uploaded files and their metadata.
@@ -177,7 +176,6 @@ class Media(Base):
 	)
 
 
-# Models
 class AdminSetup(Base):
 	"""
 	AdminSetup Model for managing admin user configuration and 2FA settings.
@@ -224,6 +222,62 @@ class AdminSetup(Base):
 	def has_2fa(self):
 		"""Check if 2FA is properly configured and enabled"""
 		return self.two_fa_enabled and self.two_fa_secret is not None
+
+
+ROLE_ADMINISTRATOR = "administrator"
+ROLE_EDITOR = "editor"
+ROLE_AUTHOR = "author"
+ROLE_CONTRIBUTOR = "contributor"
+ROLES = (ROLE_ADMINISTRATOR, ROLE_EDITOR, ROLE_AUTHOR, ROLE_CONTRIBUTOR)
+
+
+class User(Base):
+	"""
+	A CMS user account. Several users can exist, each with a role that
+	controls what they may do (modelled on WordPress roles):
+
+		administrator - everything, including users and site settings
+		editor        - manage all pages, posts, taxonomy and media
+		author        - write and publish their own posts
+		contributor   - write their own drafts only (cannot publish)
+
+	Accounts are created from the command line (``python manage.py
+	createsuperuser`` / ``createuser``) or by an administrator in the web UI.
+	"""
+
+	__tablename__ = "users"
+
+	id = Column(Integer, primary_key=True)
+	username = Column(String(64), unique=True, nullable=False, index=True)
+	email = Column(String(190), unique=True, nullable=False)
+	display_name = Column(String(150), nullable=True)
+	password_hash = Column(String(255), nullable=False)
+	role = Column(String(20), nullable=False, default=ROLE_CONTRIBUTOR)
+	is_active = Column(Boolean, nullable=False, default=True)
+	two_fa_secret = Column(String(255), nullable=True)
+	two_fa_enabled = Column(Boolean, nullable=False, default=False)
+	last_login_at = Column(DateTime, nullable=True)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow)
+	updated_at = Column(
+		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+	)
+
+	def to_dict(self, include_secrets: bool = False) -> Dict[str, Any]:
+		data = {
+			"id": self.id,
+			"username": self.username,
+			"email": self.email,
+			"display_name": self.display_name or self.username,
+			"role": self.role,
+			"is_active": bool(self.is_active),
+			"two_fa_enabled": bool(self.two_fa_enabled and self.two_fa_secret),
+			"last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+			"created_at": self.created_at.isoformat() if self.created_at else None,
+		}
+		if include_secrets:
+			data["password_hash"] = self.password_hash
+			data["two_fa_secret"] = self.two_fa_secret
+		return data
 
 
 class Page(Base):
@@ -289,7 +343,10 @@ class Page(Base):
 	title = Column(String(255), nullable=False)
 	content = Column(Text)
 	description = Column(Text)
-	status = Column(String(50), default="published")  # published, draft
+	status = Column(String(50), default="published")
+	template = Column(String(100), nullable=False, default="default")
+	fields = Column(Text, nullable=True)
+	author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
 	updated_at = Column(
 		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
@@ -303,6 +360,9 @@ class Page(Base):
 			"content": self.content,
 			"description": self.description,
 			"status": self.status,
+			"template": self.template or "default",
+			"fields": decode_fields(self.fields),
+			"author_id": self.author_id,
 			"created_at": self.created_at.isoformat() if self.created_at else None,
 			"updated_at": self.updated_at.isoformat() if self.updated_at else None,
 		}
@@ -371,20 +431,23 @@ class Post(Base):
 	title = Column(String(255), nullable=False)
 	content = Column(Text)
 	excerpt = Column(Text)
-	status = Column(String(50), default="published")  # published, draft
+	status = Column(String(50), default="published")
 	category_id = Column(Integer, ForeignKey("categories.id"))
+	author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
 	updated_at = Column(
 		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
 	)
 	published_at = Column(DateTime)
+	cover_image = Column(String(1000), nullable=True)
+	meta = Column(Text, nullable=True)
 
-	# Relationships
 	category = relationship("Category", back_populates="posts")
 	tags = relationship("Tag", secondary=post_tags, back_populates="posts")
 
 	def to_dict(self):
 		return {
+			"author_id": self.author_id,
 			"id": self.id,
 			"slug": self.slug,
 			"title": self.title,
@@ -399,6 +462,8 @@ class Post(Base):
 			"published_at": (
 				self.published_at.isoformat() if self.published_at else None
 			),
+			"cover_image": self.cover_image or "",
+			"meta": decode_fields(self.meta),
 		}
 
 
@@ -454,8 +519,13 @@ class Category(Base):
 	slug = Column(String(255), unique=True, index=True, nullable=False)
 	description = Column(Text)
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
+	section_path = Column(String(100), unique=True, index=True, nullable=True)
+	singular_name = Column(String(100), nullable=True)
+	fields_schema = Column(Text, nullable=True)
+	sort_order = Column(Integer, default=0)
+	date_label = Column(String(60), nullable=True)
+	show_time = Column(Boolean, default=False)
 
-	# Relationships
 	posts = relationship("Post", back_populates="category")
 
 	def to_dict(self):
@@ -466,6 +536,12 @@ class Category(Base):
 			"description": self.description,
 			"created_at": self.created_at.isoformat() if self.created_at else None,
 			"post_count": len(self.posts),
+			"section_path": self.section_path or "",
+			"singular_name": self.singular_name or "",
+			"fields_schema": decode_json_list(self.fields_schema),
+			"sort_order": self.sort_order or 0,
+			"date_label": self.date_label or "Date",
+			"show_time": bool(self.show_time),
 		}
 
 
@@ -517,7 +593,6 @@ class Tag(Base):
 	name = Column(String(255), unique=True, index=True, nullable=False)
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-	# Relationships
 	posts = relationship("Post", secondary=post_tags, back_populates="tags")
 
 	def to_dict(self):
@@ -527,10 +602,6 @@ class Tag(Base):
 			"created_at": self.created_at.isoformat() if self.created_at else None,
 			"count": len([post for post in self.posts if post.status == "published"]),
 		}
-
-
-
-
 
 
 class SiteSetting(Base):
@@ -545,18 +616,12 @@ class SiteSetting(Base):
 	)
 
 	def to_dict(self):
-		# Try to parse JSON values
 		try:
 			value = json.loads(self.value) if self.value else None
 		except (json.JSONDecodeError, TypeError):
 			value = self.value
 
 		return {"key": self.key, "value": value}
-
-
-
-
-
 
 
 class MediaLibrary(Base):
@@ -677,10 +742,44 @@ class MediaLibrary(Base):
 		}
 
 
+class Entry(Base):
+	"""
+	A record in a directory such as Faculty or Officer & Staff.
+
+	``data`` holds the full JSON record (biography, education, publications, ...),
+	in the same shape as the old faculty.json file, so it can be imported and
+	exported unchanged. The columns next to it exist for listing and ordering.
+	"""
+
+	__tablename__ = "entries"
+
+	id = Column(Integer, primary_key=True, index=True)
+	kind = Column(String(50), nullable=False, index=True)
+	slug = Column(String(255), nullable=False, index=True)
+	name = Column(String(255), nullable=False)
+	group = Column(String(50), nullable=False, default="active")
+	status = Column(String(50), default="published")
+	sort_order = Column(Integer, default=0)
+	data = Column(Text, nullable=True)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow)
+	updated_at = Column(
+		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+	)
+
+	def to_dict(self):
+		record = decode_fields(self.data)
+		record.update({
+			"id": self.id,
+			"kind": self.kind,
+			"slug": self.slug,
+			"name": self.name,
+			"group": self.group or "active",
+			"status": self.status or "published",
+			"sort_order": self.sort_order or 0,
+		})
+		return record
 
 
-
-# Database operations class
 class DatabaseManager:
 	"""
 	Core database management class handling all database operations.
@@ -716,28 +815,237 @@ class DatabaseManager:
 		self.engine = engine
 		self.SessionLocal = SessionLocal
 
-		# Create tables
-		Base.metadata.create_all(self.engine)
+		self.create_tables()
 
 	def create_tables(self):
-		"""Create all tables"""
+		"""Create all tables and bring older databases up to the current schema."""
 		Base.metadata.create_all(bind=self.engine)
+		self._ensure_columns()
+		self._migrate_legacy_admin()
+
+	def _ensure_columns(self):
+		"""
+		Additive migration: create_all() does not add columns to existing
+		tables, so add any missing ones. Works on SQLite and MySQL.
+		"""
+		additions = {
+			"pages": [
+				("template", "VARCHAR(100) NOT NULL DEFAULT 'default'"),
+				("fields", "TEXT"),
+				("author_id", "INTEGER"),
+			],
+			"posts": [
+				("author_id", "INTEGER"),
+				("cover_image", "VARCHAR(1000)"),
+				("meta", "TEXT"),
+			],
+			"categories": [
+				("section_path", "VARCHAR(100)"),
+				("singular_name", "VARCHAR(100)"),
+				("fields_schema", "TEXT"),
+				("sort_order", "INTEGER DEFAULT 0"),
+				("date_label", "VARCHAR(60)"),
+				("show_time", "BOOLEAN DEFAULT 0"),
+			],
+		}
+		try:
+			insp = inspect(self.engine)
+			tables = set(insp.get_table_names())
+			with self.engine.begin() as conn:
+				for table, columns in additions.items():
+					if table not in tables:
+						continue
+					existing = {c["name"] for c in insp.get_columns(table)}
+					for name, ddl in columns:
+						if name not in existing:
+							conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+		except SQLAlchemyError as e:
+			print(f"Schema migration warning: {str(e)}")
+
+	def _migrate_legacy_admin(self):
+		"""
+		Older versions stored one admin in admin_setup. If the users table is
+		empty and that row is configured, copy it in as an administrator so
+		existing installs keep working.
+		"""
+		db = self.get_session()
+		try:
+			if db.query(User).first() is not None:
+				return
+			legacy = db.query(AdminSetup).first()
+			if legacy is None or not legacy.is_configured or not legacy.username:
+				return
+			admin = User(
+				username=legacy.username,
+				email=legacy.email or f"{legacy.username}@localhost",
+				password_hash=legacy.password,
+				role=ROLE_ADMINISTRATOR,
+				two_fa_secret=legacy.two_fa_secret if legacy.two_fa_enabled else None,
+				two_fa_enabled=bool(legacy.two_fa_enabled and legacy.two_fa_secret),
+			)
+			db.add(admin)
+			db.flush()
+			db.query(Page).filter(Page.author_id.is_(None)).update(
+				{Page.author_id: admin.id}, synchronize_session=False
+			)
+			db.query(Post).filter(Post.author_id.is_(None)).update(
+				{Post.author_id: admin.id}, synchronize_session=False
+			)
+			db.commit()
+			print(f"Migrated legacy admin '{legacy.username}' to the users table.")
+		except SQLAlchemyError as e:
+			db.rollback()
+			print(f"Legacy admin migration warning: {str(e)}")
+		finally:
+			db.close()
+
+
+	def count_users(self) -> int:
+		db = self.get_session()
+		try:
+			return db.query(User).count()
+		finally:
+			db.close()
+
+	def count_active_administrators(self) -> int:
+		db = self.get_session()
+		try:
+			return (
+				db.query(User)
+				.filter(User.role == ROLE_ADMINISTRATOR, User.is_active.is_(True))
+				.count()
+			)
+		finally:
+			db.close()
+
+	def list_users(self) -> List[Dict[str, Any]]:
+		db = self.get_session()
+		try:
+			return [u.to_dict() for u in db.query(User).order_by(User.username).all()]
+		finally:
+			db.close()
+
+	def get_user(self, user_id: int, include_secrets: bool = False) -> Optional[Dict[str, Any]]:
+		db = self.get_session()
+		try:
+			user = db.query(User).filter(User.id == user_id).first()
+			return user.to_dict(include_secrets=include_secrets) if user else None
+		finally:
+			db.close()
+
+	def get_user_by_username(self, username: str, include_secrets: bool = False) -> Optional[Dict[str, Any]]:
+		db = self.get_session()
+		try:
+			user = db.query(User).filter(User.username == username).first()
+			return user.to_dict(include_secrets=include_secrets) if user else None
+		finally:
+			db.close()
+
+	def create_user(
+		self,
+		username: str,
+		email: str,
+		password_hash: str,
+		role: str = ROLE_CONTRIBUTOR,
+		display_name: Optional[str] = None,
+	) -> Dict[str, Any]:
+		"""Create a user. Raises ValueError with a readable message on conflict."""
+		if role not in ROLES:
+			raise ValueError(f"Unknown role: {role}")
+		db = self.get_session()
+		try:
+			if db.query(User).filter(User.username == username).first():
+				raise ValueError(f"Username '{username}' is already taken.")
+			if db.query(User).filter(User.email == email).first():
+				raise ValueError(f"Email '{email}' is already registered.")
+			user = User(
+				username=username,
+				email=email,
+				display_name=display_name or None,
+				password_hash=password_hash,
+				role=role,
+				is_active=True,
+			)
+			db.add(user)
+			db.commit()
+			return user.to_dict()
+		except SQLAlchemyError as e:
+			db.rollback()
+			raise ValueError(f"Database error while creating user: {str(e)}")
+		finally:
+			db.close()
+
+	def update_user(self, user_id: int, **changes) -> Dict[str, Any]:
+		"""Update allowed user columns. Raises ValueError on problems."""
+		allowed = {"email", "display_name", "password_hash", "role", "is_active",
+		           "two_fa_secret", "two_fa_enabled", "last_login_at"}
+		unknown = set(changes) - allowed
+		if unknown:
+			raise ValueError(f"Cannot update fields: {', '.join(sorted(unknown))}")
+		if "role" in changes and changes["role"] not in ROLES:
+			raise ValueError(f"Unknown role: {changes['role']}")
+		db = self.get_session()
+		try:
+			user = db.query(User).filter(User.id == user_id).first()
+			if user is None:
+				raise ValueError("User not found.")
+			if "email" in changes:
+				clash = db.query(User).filter(User.email == changes["email"], User.id != user_id).first()
+				if clash:
+					raise ValueError(f"Email '{changes['email']}' is already registered.")
+			for key, value in changes.items():
+				setattr(user, key, value)
+			user.updated_at = datetime.datetime.utcnow()
+			db.commit()
+			return user.to_dict()
+		except SQLAlchemyError as e:
+			db.rollback()
+			raise ValueError(f"Database error while updating user: {str(e)}")
+		finally:
+			db.close()
+
+	def delete_user(self, user_id: int, reassign_to_id: int) -> bool:
+		"""Delete a user and hand their pages and posts to another user."""
+		db = self.get_session()
+		try:
+			user = db.query(User).filter(User.id == user_id).first()
+			if user is None:
+				return False
+			db.query(Page).filter(Page.author_id == user_id).update(
+				{Page.author_id: reassign_to_id}, synchronize_session=False
+			)
+			db.query(Post).filter(Post.author_id == user_id).update(
+				{Post.author_id: reassign_to_id}, synchronize_session=False
+			)
+			db.delete(user)
+			db.commit()
+			return True
+		except SQLAlchemyError as e:
+			db.rollback()
+			print(f"Error deleting user: {str(e)}")
+			return False
+		finally:
+			db.close()
+
+	def touch_last_login(self, user_id: int) -> None:
+		db = self.get_session()
+		try:
+			user = db.query(User).filter(User.id == user_id).first()
+			if user:
+				user.last_login_at = datetime.datetime.utcnow()
+				db.commit()
+		except SQLAlchemyError:
+			db.rollback()
+		finally:
+			db.close()
 
 	def get_session(self) -> Session:
 		"""Get database session"""
 		return self.SessionLocal()
 
 	def is_setup_complete(self) -> bool:
-		"""Check if initial setup is complete"""
-		db = self.get_session()
-		try:
-			admin_setup = db.query(AdminSetup).first()
-			return admin_setup is not None and admin_setup.is_configured
-		except SQLAlchemyError as e:
-			print(f"Error checking setup status: {str(e)}")
-			return False
-		finally:
-			db.close()
+		"""The CMS is usable once at least one account exists (created via CLI)."""
+		return self.count_users() > 0
 
 	def complete_setup(
 		self,
@@ -782,7 +1090,7 @@ class DatabaseManager:
 					"username": admin_setup.username,
 					"password": admin_setup.password,
 					"email": admin_setup.email,
-					"two_fa_enabled": admin_setup.has_2fa,  # Use the property instead
+					"two_fa_enabled": admin_setup.has_2fa,
 					"two_fa_secret": (
 						admin_setup.two_fa_secret if admin_setup.has_2fa else None
 					),
@@ -799,11 +1107,9 @@ class DatabaseManager:
 		"""Initialize database with default data"""
 		db = self.get_session()
 		try:
-			# Check if data already exists
 			if db.query(SiteSetting).first():
 				return
 
-			# Create default categories
 			general_cat = Category(
 				name="General", slug="general", description="General posts"
 			)
@@ -811,9 +1117,8 @@ class DatabaseManager:
 				name="Technology", slug="technology", description="Tech related posts"
 			)
 			db.add_all([general_cat, tech_cat])
-			db.flush()  # Flush to get IDs
+			db.flush()
 
-			# Create default pages
 			home_page = Page(
 				slug="home",
 				title="Home",
@@ -830,7 +1135,6 @@ class DatabaseManager:
 			)
 			db.add_all([home_page, about_page])
 
-			# Create default site settings
 			default_settings = {
 				"site_title": "Flexaflow",
 				"site_description": "A powerful CMS",
@@ -867,7 +1171,6 @@ class DatabaseManager:
 		finally:
 			db.close()
 
-	# Add media methods
 	def add_media(self, media_data):
 		"""
 		Add a new media item to the media library.
@@ -945,7 +1248,6 @@ class DatabaseManager:
 			db.add(media)
 			db.commit()
 
-			# Return the media data with additional fields
 			result = media_data.copy()
 			result["id"] = media.id
 			result["created_at"] = media.created_at.isoformat()
@@ -1046,14 +1348,11 @@ class DatabaseManager:
 					| (Media.description.ilike(search))
 				)
 
-			# Calculate pagination
 			total = query.count()
 			total_pages = (total + per_page - 1) // per_page
 
-			# Ensure page is within bounds
 			page = max(1, min(page, total_pages))
 
-			# Get paginated results
 			offset = (page - 1) * per_page
 			media_items = (
 				query.order_by(Media.created_at.desc())
@@ -1062,7 +1361,6 @@ class DatabaseManager:
 				.all()
 			)
 
-			# Format results
 			items = []
 			for media in media_items:
 				items.append(
@@ -1213,15 +1511,12 @@ class DatabaseManager:
 		try:
 			media = db.query(Media).filter(Media.id == media_id).first()
 			if media:
-				# Get filenames before deletion
 				filename = media.filename
 				thumbnail = media.thumbnail
 
-				# Delete from database
 				db.delete(media)
 				db.commit()
 
-				# Delete files
 				try:
 					if filename:
 						file_path = os.path.join("uploads", filename)
@@ -1245,7 +1540,6 @@ class DatabaseManager:
 			db.close()
 
 
-
 	def get_sitemap_content(self) -> Optional[str]:
 		"""Retrieves the sitemap XML content from the database."""
 		db = self.get_session()
@@ -1259,18 +1553,15 @@ class DatabaseManager:
 			db.close()
 
 
-
 	def update_sitemap_content(self, xml_content: str) -> bool:
 		"""Updates or creates the sitemap entry in the database."""
 		db = self.get_session()
 		try:
 			sitemap = db.query(Sitemap).first()
 			if sitemap:
-				# Update existing entry
 				sitemap.content = xml_content
 				sitemap.updated_at = datetime.datetime.utcnow()
 			else:
-				# Create new entry
 				sitemap = Sitemap(content=xml_content)
 				db.add(sitemap)
 			db.commit()
@@ -1283,21 +1574,11 @@ class DatabaseManager:
 			db.close()
 
 
-
-
-
-
-
-
-
-
-# Initialize database manager
 db_manager = DatabaseManager()
 db_manager.create_tables()
 db_manager.initialize_default_data()
 
 
-# Data access functions (matching your original API)
 def get_pages() -> Dict[str, Any]:
 	"""
 	Retrieve all published pages from the database.
@@ -1447,7 +1728,6 @@ def get_site_settings() -> Dict[str, Any]:
 		result = {}
 		for setting in settings:
 			try:
-				# Try to parse JSON values
 				value = json.loads(setting.value) if setting.value else ""
 			except (json.JSONDecodeError, TypeError):
 				value = setting.value
@@ -1470,6 +1750,9 @@ def add_page(slug: str, page_data: Dict[str, Any]) -> bool:
 			content=page_data.get("content", ""),
 			description=page_data.get("description", ""),
 			status=page_data.get("status", "published"),
+			template=page_data.get("template") or "default",
+			fields=json.dumps(page_data.get("fields") or {}, ensure_ascii=False),
+			author_id=page_data.get("author_id"),
 		)
 		db.add(page)
 		db.commit()
@@ -1510,7 +1793,6 @@ def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 	"""Add a new post"""
 	db = db_manager.get_session()
 	try:
-		# Get or create category
 		category = None
 		if "category" in post_data:
 			category = (
@@ -1526,14 +1808,15 @@ def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 			excerpt=post_data.get("excerpt", ""),
 			status=post_data.get("status", "published"),
 			category_id=category.id if category else None,
+			author_id=post_data.get("author_id"),
+			cover_image=post_data.get("cover_image") or None,
+			meta=json.dumps(post_data.get("meta") or {}, ensure_ascii=False),
 			published_at=(
-				datetime.datetime.utcnow()
-				if post_data.get("status") == "published"
-				else None
+				post_data.get("published_at")
+				or (datetime.datetime.utcnow() if post_data.get("status") == "published" else None)
 			),
 		)
 
-		# Handle tags
 		if "tags" in post_data and isinstance(post_data["tags"], list):
 			for tag_name in post_data["tags"]:
 				tag = db.query(Tag).filter(Tag.name == tag_name).first()
@@ -1549,6 +1832,48 @@ def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 		db.rollback()
 		print(f"Error adding post: {str(e)}")
 		return False
+	finally:
+		db.close()
+
+
+def get_latest_posts(category_slug: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
+	"""
+	Published posts, newest first, optionally limited to one category.
+	Used by page templates (e.g. a department landing page's news/notice lists).
+	"""
+	db = db_manager.get_session()
+	try:
+		query = (
+			db.query(Post)
+			.outerjoin(Category, Post.category_id == Category.id)
+			.filter(Post.status == "published")
+		)
+		if category_slug:
+			query = query.filter(Category.slug == category_slug)
+		posts = (
+			query.order_by(Post.published_at.desc(), Post.created_at.desc())
+			.limit(max(1, int(limit)))
+			.all()
+		)
+		result = []
+		for post in posts:
+			result.append({
+				"slug": post.slug,
+				"title": post.title,
+				"excerpt": post.excerpt or "",
+				"published_at": post.published_at,
+				"category": post.category.name if post.category else "",
+				"cover_image": post.cover_image or "",
+				"meta": decode_fields(post.meta),
+				"url": (
+					f"/{post.category.section_path}/{post.slug}"
+					if post.category and post.category.section_path else f"/post/{post.slug}"
+				),
+			})
+		return result
+	except SQLAlchemyError as e:
+		print(f"Error loading latest posts: {str(e)}")
+		return []
 	finally:
 		db.close()
 
@@ -1640,31 +1965,11 @@ def update_site_settings(settings_data: Dict[str, Any]) -> bool:
 		db.close()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def update_tag_counts() -> Dict[str, Any]:
 	"""Recalculate tag counts based on published posts"""
-	# This is automatically handled by the relationship and to_dict method
 	return get_tags()
 
 
-# Migration helper functions
 def migrate_from_json(json_file_path: str) -> bool:
 	"""Migrate data from JSON file to database"""
 	try:
@@ -1673,14 +1978,12 @@ def migrate_from_json(json_file_path: str) -> bool:
 
 		db = db_manager.get_session()
 
-		# Clear existing data
 		db.query(Post).delete()
 		db.query(Page).delete()
 		db.query(Category).delete()
 		db.query(Tag).delete()
 		db.query(SiteSetting).delete()
 
-		# Migrate categories
 		if "categories" in data:
 			for slug, cat_data in data["categories"].items():
 				category = Category(
@@ -1690,7 +1993,6 @@ def migrate_from_json(json_file_path: str) -> bool:
 				)
 				db.add(category)
 
-		# Migrate pages
 		if "pages" in data:
 			for slug, page_data in data["pages"].items():
 				page = Page(
@@ -1702,7 +2004,6 @@ def migrate_from_json(json_file_path: str) -> bool:
 				)
 				db.add(page)
 
-		# Migrate site settings
 		if "site_settings" in data:
 			for key, value in data["site_settings"].items():
 				setting = SiteSetting(
@@ -1727,7 +2028,6 @@ def migrate_from_json(json_file_path: str) -> bool:
 		db.close()
 
 
-# Backup function
 def backup_to_json(json_file_path: str) -> bool:
 	"""Backup database to JSON file"""
 	try:

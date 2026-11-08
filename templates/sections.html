@@ -1,0 +1,69 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Sections & addresses{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<div>
+		<h1 class="h4 mb-1">Sections &amp; addresses</h1>
+		<p class="text-muted mb-0">Each section is a kind of content with its own web address, for example <code>/notices/</code> or <code>/events/</code>. Posts you publish in a section appear there, and the Publish menu gets a “New …” button for it.</p>
+	</div>
+	<a class="btn btn-primary mt-2" href="{{ url_for('content.section_new') }}">+ Add section</a>
+</div>
+
+{% if presets %}
+<div class="card mb-3 border-info">
+	<div class="card-body py-3">
+		<strong>Quick start:</strong>
+		{% for key, p in presets.items() %}
+		<a class="btn btn-sm btn-outline-info ms-2" href="{{ url_for('content.section_new', preset=key) }}">Add {{ p.name }} (/{{ p.section_path }}/)</a>
+		{% endfor %}
+	</div>
+</div>
+{% endif %}
+
+<div class="card"><div class="card-body p-0">
+	<table class="table table-hover mb-0" id="sectionsTable">
+		<thead class="table-light"><tr><th style="width:90px">Order</th><th>Section</th><th>Public address</th><th>Extra fields</th><th>Posts</th><th></th></tr></thead>
+		<tbody>
+		{% for s in sections %}
+			<tr data-id="{{ s.id }}">
+				<td class="text-nowrap">
+					<button type="button" class="btn btn-sm btn-light js-up" title="Move up" aria-label="Move up">↑</button>
+					<button type="button" class="btn btn-sm btn-light js-down" title="Move down" aria-label="Move down">↓</button>
+				</td>
+				<td><a href="{{ url_for('content.section_edit', category_id=s.id) }}"><strong>{{ s.name }}</strong></a><br><small class="text-muted">Button: “New {{ (s.singular_name or s.name)|lower }}”</small></td>
+				<td><a href="/{{ s.section_path }}/" target="_blank" rel="noopener"><code>/{{ s.section_path }}/</code></a></td>
+				<td class="small">{% for f in s.fields_schema %}{{ f.label }}{% if not loop.last %}, {% endif %}{% else %}<span class="text-muted">none</span>{% endfor %}</td>
+				<td>{{ s.post_count }}</td>
+				<td class="actions text-end">
+					<a class="btn btn-sm btn-outline-primary" href="/post/add?section={{ s.section_path }}">New {{ (s.singular_name or s.name)|lower }}</a>
+					<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('content.section_edit', category_id=s.id) }}">Edit</a>
+					<form method="post" action="{{ url_for('content.section_remove', category_id=s.id) }}" class="d-inline" onsubmit="return confirm('Remove this section from the site? Its {{ s.post_count }} post(s) are kept, but /{{ s.section_path }}/ will stop working.');">
+						<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+						<button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+					</form>
+				</td>
+			</tr>
+		{% else %}
+			<tr><td colspan="6" class="text-center text-muted py-4">No sections yet. Use a quick-start button above.</td></tr>
+		{% endfor %}
+		</tbody>
+	</table>
+</div></div>
+<p class="small text-muted mt-3">Faculty (<code>/faculty/</code>) and Officer &amp; Staff (<code>/officer-and-staff/</code>) have fixed addresses and are managed under <strong>People</strong>.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function ($) {
+	function save() {
+		var ids = $('#sectionsTable tbody tr[data-id]').map(function () { return +$(this).data('id'); }).get();
+		fetch('/admin/sections/reorder', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: ids}) });
+	}
+	$('#sectionsTable').on('click', '.js-up', function () {
+		var $r = $(this).closest('tr'); $r.prev('tr').before($r); save();
+	}).on('click', '.js-down', function () {
+		var $r = $(this).closest('tr'); $r.next('tr').after($r); save();
+	});
+})(window.jQuery);
+</script>
+{% endblock %}

@@ -1,0 +1,97 @@
+
+{% macro simple_input(field, name, value) -%}
+	{%- if field.type == 'textarea' -%}
+		<textarea class="form-control" name="{{ name }}" rows="3" id="{{ name|replace('][', '_')|replace('[', '_')|replace(']', '') }}">{{ value }}</textarea>
+	{%- elif field.type == 'richtext' -%}
+		<textarea class="form-control js-richtext" name="{{ name }}" rows="8">{{ value }}</textarea>
+	{%- elif field.type == 'image' -%}
+		<div class="image-field">
+			<div class="input-group">
+				<input type="text" class="form-control js-image-url" name="{{ name }}" value="{{ value }}" placeholder="/uploads/… or https://…">
+				<button type="button" class="btn btn-outline-secondary js-pick-image">Choose</button>
+					<button type="button" class="btn btn-outline-danger js-clear-image">Clear</button>
+			</div>
+			<img class="img-thumbnail mt-2 js-image-preview" src="{{ value }}" alt="" style="{{ '' if value else 'display:none;' }}">
+		</div>
+	{%- elif field.type == 'file' -%}
+		<div class="file-field">
+			<div class="input-group">
+				<input type="text" class="form-control js-file-url" name="{{ name }}" value="{{ value }}" placeholder="Upload a document or paste a link">
+				<button type="button" class="btn btn-outline-secondary js-upload-file">Upload…</button>
+					<button type="button" class="btn btn-outline-danger js-clear-file">Clear</button>
+			</div>
+			<input type="file" class="d-none js-file-input">
+			<small class="form-text text-muted js-file-status"></small>
+		</div>
+	{%- elif field.type == 'date' -%}
+		<input type="date" class="form-control" name="{{ name }}" value="{{ value }}">
+	{%- elif field.type == 'datetime' -%}
+		<input type="datetime-local" class="form-control" name="{{ name }}" value="{{ value }}">
+	{%- elif field.type == 'select' -%}
+		<select class="form-select" name="{{ name }}">
+			<option value="">— choose —</option>
+			{%- for opt in field.options %}
+			<option value="{{ opt.value }}" {{ 'selected' if opt.value == value }}>{{ opt.label }}</option>
+			{%- endfor %}
+		</select>
+	{%- elif field.type == 'number' -%}
+		<input type="number" step="any" class="form-control" name="{{ name }}" value="{{ value }}">
+	{%- elif field.type == 'email' -%}
+		<input type="email" class="form-control" name="{{ name }}" value="{{ value }}">
+	{%- elif field.type == 'url' -%}
+		<input type="text" class="form-control" name="{{ name }}" value="{{ value }}" placeholder="https://… or /page-slug">
+	{%- else -%}
+		<input type="text" class="form-control" name="{{ name }}" value="{{ value }}">
+	{%- endif -%}
+{%- endmacro %}
+
+{% macro repeater(field, rows) -%}
+	<div class="repeater" data-name="{{ field.name }}">
+		<div class="repeater-rows">
+			{%- for row in rows %}
+			{%- set row_idx = loop.index0 %}
+			<div class="repeater-row card card-body mb-2">
+				<div class="d-flex justify-content-between align-items-center mb-2">
+					<small class="text-muted fw-bold">{{ field.label }} #{{ loop.index }}</small>
+					<button type="button" class="btn btn-sm btn-link text-danger js-remove-row p-0">Remove</button>
+				</div>
+				{%- for sub in field.fields %}
+				<div class="mb-2">
+					<label class="small text-muted mb-1">{{ sub.label }}</label>
+					{{ simple_input(sub, 'field[' ~ field.name ~ '][r' ~ row_idx ~ '][' ~ sub.name ~ ']', row.get(sub.name, '')) }}
+				</div>
+				{%- endfor %}
+			</div>
+			{%- endfor %}
+		</div>
+		<button type="button" class="btn btn-sm btn-outline-primary js-add-row">+ Add {{ field.label|lower }}</button>
+		<template>
+			<div class="repeater-row card card-body mb-2">
+				<div class="d-flex justify-content-between align-items-center mb-2">
+					<small class="text-muted fw-bold">{{ field.label }}</small>
+					<button type="button" class="btn btn-sm btn-link text-danger js-remove-row p-0">Remove</button>
+				</div>
+				{%- for sub in field.fields %}
+				<div class="mb-2">
+					<label class="small text-muted mb-1">{{ sub.label }}</label>
+					{{ simple_input(sub, 'field[' ~ field.name ~ '][__ROW__][' ~ sub.name ~ ']', sub.default or '') }}
+				</div>
+				{%- endfor %}
+			</div>
+		</template>
+	</div>
+{%- endmacro %}
+
+{% macro render_fields(fields, values) -%}
+	{%- for field in fields %}
+	<div class="mb-3">
+		<label class="fw-bold mb-1">{{ field.label }}</label>
+		{%- if field.help %}<small class="form-text text-muted mt-0 mb-1">{{ field.help }}</small>{% endif %}
+		{%- if field.type == 'repeater' %}
+			{{ repeater(field, values.get(field.name) or []) }}
+		{%- else %}
+			{{ simple_input(field, 'field[' ~ field.name ~ ']', values.get(field.name, '')) }}
+		{%- endif %}
+	</div>
+	{%- endfor %}
+{%- endmacro %}

@@ -15,7 +15,7 @@ def load_theme_functions(theme_name: str) -> Dict[str, Callable]:
 
 	for filename in os.listdir(functions_dir):
 		if filename.endswith('.py') and not filename.startswith('__'):
-			module_name = f"theme_functions_{filename[:-3]}"  # Remove .py extension
+			module_name = f"theme_functions_{filename[:-3]}"
 			module_path = os.path.join(functions_dir, filename)
 			
 			try:
@@ -25,7 +25,6 @@ def load_theme_functions(theme_name: str) -> Dict[str, Callable]:
 					sys.modules[module_name] = module
 					spec.loader.exec_module(module)
 					
-					# Get all callable attributes that don't start with underscore
 					functions = {name: getattr(module, name) 
 							   for name in dir(module) 
 							   if callable(getattr(module, name)) and not name.startswith('_')}
@@ -49,17 +48,13 @@ def copy_theme_static_files(theme_name: str, main_static_dir: str = 'static') ->
 
 	if not os.path.exists(main_static_dir):
 		return
-		#os.makedirs(main_static_dir)
 	
-	# Create theme-specific folder in main static directory
 	theme_target_dir = os.path.join(main_static_dir, theme_name)
 	
 	try:
-		# Remove existing theme static files if they exist
 		if os.path.exists(theme_target_dir):
 			shutil.rmtree(theme_target_dir)
 		
-		# Copy theme static files
 		shutil.copytree(theme_static_dir, theme_target_dir)
 		print(f"Static files for theme '{theme_name}' copied to '{theme_target_dir}'")
 		return True

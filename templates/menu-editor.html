@@ -1,166 +1,164 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Menu Editor - Admin</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
+{% extends "_admin_layout.html" %}
+{% block title %}Navigation menu{% endblock %}
 
-    <link rel="stylesheet" href="/static/bootstrap-and-related/jquery-ui.min.css">
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
-            <div>
-                <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
-                <a href="/" class="btn btn-outline-light">View Site</a>
-            </div>
-        </div>
-    </nav>
+{% block head %}
+<style>
+	.menu-item { background:#fff; border:1px solid #dee2e6; border-radius:.4rem; margin-bottom:.6rem; }
+	.menu-item .head { display:flex; gap:.5rem; align-items:center; padding:.5rem .6rem; }
+	.menu-item .head .form-control { min-width:0; }
+	.menu-item .children { padding:0 .6rem .6rem 2.2rem; }
+	.menu-item .child { display:flex; gap:.5rem; align-items:center; margin-top:.4rem; }
+	.menu-item .child .form-control { min-width:0; }
+	.menu-item .btn-icon { padding:.15rem .45rem; }
+	.quick-list .list-group-item { padding:.35rem .75rem; font-size:.88rem; }
+</style>
+{% endblock %}
 
-    <div class="container mt-4">
-        <h2>Menu Editor</h2>
-        
-        <div class="row mt-4">
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Add Menu Item</h5>
-                        <form id="addMenuForm">
-                            <div class="form-group">
-                                <label>Label</label>
-                                <input type="text" class="form-control" id="menuLabel" required>
-                            </div>
-                            <div class="form-group">
-                                <label>URL</label>
-                                <input type="text" class="form-control" id="menuUrl" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Add Item</button>
-                        </form>
-                        
-                        <hr>
-                        
-                        <h6 class="mt-4">Available Pages</h6>
-                        <div class="list-group">
-                            {% for slug, page in pages.items() %}
-                            <button type="button" class="list-group-item list-group-item-action add-page" 
-                                    data-url="/{{ slug }}" 
-                                    data-label="{{ page.title }}">
-                                {{ page.title }}
-                            </button>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Current Menu</h5>
-                        <p class="text-muted">Drag items to reorder them</p>
-                        
-                        <ul id="menuItems" class="list-group">
-                            {% for item in menu_items %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center" 
-                                data-url="{{ item.url }}" 
-                                data-label="{{ item.label }}">
-                                <span>{{ item.label }}</span>
-                                <div>
-                                    <small class="text-muted mr-3">{{ item.url }}</small>
-                                    <button class="btn btn-sm btn-danger remove-item">×</button>
-                                </div>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                        
-                        <button id="saveMenu" class="btn btn-primary mt-4">Save Menu</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<div>
+		<h1 class="h4 mb-1">Navigation menu</h1>
+		<p class="text-muted mb-0 small">The menu shown at the top of the site. An item with sub-items becomes a dropdown.</p>
+	</div>
+	<button id="saveMenu" class="btn btn-primary mt-2" type="button">Save menu</button>
+</div>
 
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
-    <script src="/static/bootstrap-and-related/jquery-ui.min.js"></script>
-    <script>
-        async function callAPI(endpoint, method = 'GET', data = null) {
-            try {
-                const options = {
-                    method: method,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    credentials: 'include'
-                };
+<div class="row">
+	<div class="col-lg-4 mb-3">
+		<div class="card mb-3"><div class="card-body">
+			<h2 class="h6">Add a link</h2>
+			<div class="mb-2"><label class="small text-muted mb-0" for="addTarget">Add to</label>
+				<select id="addTarget" class="form-select form-select-sm"><option value="">Top level of the menu</option></select></div>
+			<form id="addMenuForm">
+				<div class="mb-2"><input type="text" class="form-control form-control-sm" id="menuLabel" placeholder="Label" required></div>
+				<div class="mb-2"><input type="text" class="form-control form-control-sm" id="menuUrl" placeholder="/address or https://…"></div>
+				<button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
+			</form>
+		</div></div>
 
-                if (data && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
-                    options.body = JSON.stringify(data);
-                }
+		<div class="card mb-3"><div class="card-body">
+			<h2 class="h6">Sections, faculty and staff</h2>
+			<div class="list-group quick-list">
+				{% for q in quick_links %}
+				<button type="button" class="list-group-item list-group-item-action js-quick" data-url="{{ q.url }}" data-label="{{ q.label }}">{{ q.label }} <small class="text-muted float-end">{{ q.url }}</small></button>
+				{% endfor %}
+			</div>
+		</div></div>
 
-                const response = await fetch(`/api/${endpoint}`, options);
+		<div class="card"><div class="card-body">
+			<h2 class="h6">Pages</h2>
+			<div class="list-group quick-list">
+				{% for slug, page in pages.items() %}
+				<button type="button" class="list-group-item list-group-item-action js-quick" data-url="/{{ slug }}" data-label="{{ page.title }}">{{ page.title }} <small class="text-muted float-end">/{{ slug }}</small></button>
+				{% else %}
+				<span class="text-muted small">No published pages yet.</span>
+				{% endfor %}
+			</div>
+		</div></div>
+	</div>
 
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
+	<div class="col-lg-8">
+		<div id="menuTree"></div>
+		<p class="text-muted small" id="menuEmpty" hidden>The menu is empty.</p>
+	</div>
+</div>
+{% endblock %}
 
-                return await response.json();
-            } catch (error) {
-                console.error('API call failed:', error);
-                alert('API request failed: ' + error.message);
-                return null;
-            }
-        }
+{% block scripts %}
+<script id="menuData" type="application/json">{{ menu_items|tojson }}</script>
+<script>
+(function () {
+	var tree = document.getElementById('menuTree');
+	var target = document.getElementById('addTarget');
 
-        $(document).ready(function() {
-            $('#menuItems').sortable();
-            
-            $('#addMenuForm').on('submit', function(e) {
-                e.preventDefault();
-                addMenuItem($('#menuLabel').val(), $('#menuUrl').val());
-                this.reset();
-            });
-            
-            $('.add-page').click(function() {
-                addMenuItem($(this).data('label'), $(this).data('url'));
-            });
-            
-            $(document).on('click', '.remove-item', function() {
-                $(this).closest('li').remove();
-            });
-            
-            $('#saveMenu').click(async function() {
-                const menuItems = [];
-                $('#menuItems li').each(function() {
-                    menuItems.push({
-                        label: $(this).data('label'),
-                        url: $(this).data('url')
-                    });
-                });
-                
-                const response = await callAPI('menu', 'POST', menuItems);
-                if (response) {
-                    alert('Menu saved successfully!');
-                }
-            });
-            
-            function addMenuItem(label, url) {
-                const item = `
-                    <li class="list-group-item d-flex justify-content-between align-items-center" 
-                        data-url="${url}" 
-                        data-label="${label}">
-                        <span>${label}</span>
-                        <div>
-                            <small class="text-muted mr-3">${url}</small>
-                            <button class="btn btn-sm btn-danger remove-item">×</button>
-                        </div>
-                    </li>
-                `;
-                $('#menuItems').append(item);
-            }
-        });
-    </script>
-</body>
-</html>
+	function el(tag, attrs, kids) {
+		var n = document.createElement(tag);
+		Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') { n.textContent = attrs[k]; } else { n.setAttribute(k, attrs[k]); } });
+		(kids || []).forEach(function (c) { n.appendChild(c); });
+		return n;
+	}
+	function btn(text, title, fn, cls) {
+		var b = el('button', {type: 'button', 'class': 'btn btn-sm ' + (cls || 'btn-light') + ' btn-icon', text: text, title: title, 'aria-label': title});
+		b.addEventListener('click', fn); return b;
+	}
+	function field(cls, value, ph) { var i = el('input', {type: 'text', 'class': 'form-control form-control-sm ' + cls, placeholder: ph}); i.value = value || ''; return i; }
+
+	function childRow(c) {
+		var row = el('div', {'class': 'child'});
+		row.appendChild(field('c-label', c.label, 'Label'));
+		row.appendChild(field('c-url', c.url, '/address'));
+		row.appendChild(btn('↑', 'Move up', function () { var p = row.previousElementSibling; if (p && p.classList.contains('child')) { row.parentNode.insertBefore(row, p); } }));
+		row.appendChild(btn('↓', 'Move down', function () { var n = row.nextElementSibling; if (n) { row.parentNode.insertBefore(n, row); } }));
+		row.appendChild(btn('✕', 'Remove', function () { row.remove(); }, 'btn-outline-danger'));
+		return row;
+	}
+	function itemCard(item) {
+		var card = el('div', {'class': 'menu-item'});
+		var head = el('div', {'class': 'head'});
+		head.appendChild(field('i-label', item.label, 'Label'));
+		head.appendChild(field('i-url', item.url, '/address (optional for dropdowns)'));
+		head.appendChild(btn('↑', 'Move up', function () { var p = card.previousElementSibling; if (p) { tree.insertBefore(card, p); refreshTargets(); } }));
+		head.appendChild(btn('↓', 'Move down', function () { var n = card.nextElementSibling; if (n) { tree.insertBefore(n, card); refreshTargets(); } }));
+		head.appendChild(btn('✕', 'Remove', function () { if (confirm('Remove this menu item and its sub-items?')) { card.remove(); refreshTargets(); } }, 'btn-outline-danger'));
+		card.appendChild(head);
+		var kids = el('div', {'class': 'children'});
+		(item.children || []).forEach(function (c) { kids.appendChild(childRow(c)); });
+		var add = el('button', {type: 'button', 'class': 'btn btn-sm btn-link p-0 mt-2', text: '+ Add sub-item'});
+		add.addEventListener('click', function () { var r = childRow({label: '', url: ''}); kids.insertBefore(r, add); r.querySelector('input').focus(); });
+		kids.appendChild(add);
+		card.appendChild(kids);
+		card.querySelector('.i-label').addEventListener('input', refreshTargets);
+		return card;
+	}
+	function refreshTargets() {
+		var keep = target.value;
+		while (target.options.length > 1) { target.remove(1); }
+		Array.prototype.forEach.call(tree.children, function (card, i) {
+			var o = el('option', {value: String(i), text: 'Dropdown: ' + (card.querySelector('.i-label').value || '(unnamed)')}); target.appendChild(o);
+		});
+		target.value = keep && target.querySelector('option[value="' + keep + '"]') ? keep : '';
+		document.getElementById('menuEmpty').hidden = tree.children.length > 0;
+	}
+	function addLink(label, url) {
+		if (target.value === '') {
+			var card = itemCard({label: label, url: url, children: []}); tree.appendChild(card);
+		} else {
+			var parent = tree.children[+target.value]; var kids = parent.querySelector('.children');
+			kids.insertBefore(childRow({label: label, url: url}), kids.lastElementChild);
+		}
+		refreshTargets();
+	}
+	function collect() {
+		return Array.prototype.map.call(tree.children, function (card) {
+			var kids = Array.prototype.map.call(card.querySelectorAll('.child'), function (r) {
+				return {label: r.querySelector('.c-label').value.trim(), url: r.querySelector('.c-url').value.trim()};
+			}).filter(function (c) { return c.label && c.url; });
+			var item = {label: card.querySelector('.i-label').value.trim(), url: card.querySelector('.i-url').value.trim()};
+			if (kids.length) { item.children = kids; }
+			return item;
+		}).filter(function (i) { return i.label && (i.url || i.children); });
+	}
+
+	var initial = []; try { initial = JSON.parse(document.getElementById('menuData').textContent) || []; } catch (e) {}
+	initial.forEach(function (i) { tree.appendChild(itemCard(i)); });
+	refreshTargets();
+
+	document.getElementById('addMenuForm').addEventListener('submit', function (e) {
+		e.preventDefault();
+		addLink(document.getElementById('menuLabel').value.trim(), document.getElementById('menuUrl').value.trim());
+		this.reset();
+	});
+	document.addEventListener('click', function (e) {
+		var q = e.target.closest('.js-quick'); if (q) { addLink(q.dataset.label, q.dataset.url); }
+	});
+	document.getElementById('saveMenu').addEventListener('click', function () {
+		var b = this; b.disabled = true;
+		fetch('/api/menu', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(collect())})
+			.then(function (r) { return r.json(); })
+			.then(function (j) { alert(j.status === 'success' ? 'Menu saved.' : (j.message || 'Could not save the menu.')); })
+			.catch(function () { alert('Could not save the menu.'); })
+			.then(function () { b.disabled = false; });
+	});
+})();
+</script>
+{% endblock %}

@@ -10,15 +10,17 @@
         .settings-label { font-weight: 500; }
         .twofa-status { font-size: 1rem; margin-bottom: 0.5rem; }
     </style>
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="/static/admin/admin.js"></script>
 </head>
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
         <a class="navbar-brand" href="/admin">Admin Dashboard</a>
         <div>
-            <a href="/admin/menu" class="btn btn-outline-light mr-2">Menu Editor</a>
+            <a href="/admin/menu" class="btn btn-outline-light me-2">Menu Editor</a>
             <a href="/" class="btn btn-outline-light">View Site</a>
-            <a href="/logout" class="btn btn-outline-light ml-2">Logout</a>
+            <a href="/logout" class="btn btn-outline-light ms-2">Logout</a>
         </div>
     </div>
 </nav>
@@ -28,68 +30,71 @@
     <div class="card mb-4">
         <div class="card-body">
             <form id="settingsForm">
-                <!-- General Settings -->
                 <div class="settings-section">
                     <h4>General</h4>
-                    <div class="form-group">
+                    <div class="mb-3">
+                        <label class="settings-label" for="themeSelect">Theme</label>
+                        <select class="form-select" id="themeSelect" name="theme">
+                            {% for t in themes %}
+                            <option value="{{ t }}" {{ 'selected' if t == settings.theme }}>{{ t }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text text-muted">Applies immediately after saving. Theme folders live in <code>themes/</code>.</small>
+                    </div>
+                    <div class="mb-3">
                         <label class="settings-label">Site Title</label>
                         <input type="text" class="form-control" name="site_title" value="{{ settings.site_title }}">
                     </div>
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label class="settings-label">Site Description</label>
                         <textarea class="form-control" name="site_description" rows="2">{{ settings.site_description }}</textarea>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
+                    <div class="row g-2">
+                        <div class="mb-3 col-md-6">
                             <label class="settings-label">Favicon URL</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" name="favicon" id="faviconInput" value="{{ settings.favicon }}">
-                                <div class="input-group-append">
-                                    <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('faviconInput')">Choose</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('faviconInput')">Choose</button>
                                     <label class="btn btn-outline-secondary mb-0">
                                         Upload <input type="file" accept="image/*" style="display:none" onchange="uploadImage(this, 'faviconInput')">
                                     </label>
-                                </div>
                             </div>
                         </div>
-                        <div class="form-group col-md-6">
+                        <div class="mb-3 col-md-6">
                             <label class="settings-label">Logo URL</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" name="logo" id="logoInput" value="{{ settings.logo }}">
-                                <div class="input-group-append">
-                                    <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('logoInput')">Choose</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('logoInput')">Choose</button>
                                     <label class="btn btn-outline-secondary mb-0">
                                         Upload <input type="file" accept="image/*" style="display:none" onchange="uploadImage(this, 'logoInput')">
                                     </label>
-                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Important Pages -->
                 <div class="settings-section">
                     <h4>Important Pages</h4>
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
+                    <div class="row g-2">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Homepage</label>
-                            <select class="form-control" name="homepage">
+                            <select class="form-select" name="homepage">
                                 {% for slug, page in pages.items() %}
                                 <option value="{{ slug }}" {% if settings.homepage == slug %}selected{% endif %}>{{ page.title }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="form-group col-md-4">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Privacy Policy</label>
-                            <select class="form-control" name="privacy_page">
+                            <select class="form-select" name="privacy_page">
                                 <option value="">None</option>
                                 {% for slug, page in pages.items() %}
                                 <option value="{{ slug }}" {% if settings.privacy_page == slug %}selected{% endif %}>{{ page.title }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="form-group col-md-4">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Terms & Conditions</label>
-                            <select class="form-control" name="terms_page">
+                            <select class="form-select" name="terms_page">
                                 <option value="">None</option>
                                 {% for slug, page in pages.items() %}
                                 <option value="{{ slug }}" {% if settings.terms_page == slug %}selected{% endif %}>{{ page.title }}</option>
@@ -98,41 +103,39 @@
                         </div>
                     </div>
                 </div>
-                <!-- Social Media -->
                 <div class="settings-section">
                     <h4>Social Media Links</h4>
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
+                    <div class="row g-2">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Facebook</label>
                             <input type="url" class="form-control" name="social_links.facebook" value="{{ settings.social_links.facebook }}">
                         </div>
-                        <div class="form-group col-md-4">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Twitter</label>
                             <input type="url" class="form-control" name="social_links.twitter" value="{{ settings.social_links.twitter }}">
                         </div>
-                        <div class="form-group col-md-4">
+                        <div class="mb-3 col-md-4">
                             <label class="settings-label">Instagram</label>
                             <input type="url" class="form-control" name="social_links.instagram" value="{{ settings.social_links.instagram }}">
                         </div>
                     </div>
                 </div>
-                <!-- Security Settings -->
                 <div class="settings-section">
                     <h4>Security</h4>
-                    <div class="form-group">
+                    <div class="mb-3">
                         <div class="twofa-status">
                             {% if settings.two_fa_enabled %}
-                                <span class="badge badge-success">2FA Enabled</span>
+                                <span class="badge text-bg-success">2FA Enabled</span>
                             {% else %}
-                                <span class="badge badge-secondary">2FA Disabled</span>
+                                <span class="badge text-bg-secondary">2FA Disabled</span>
                             {% endif %}
                         </div>
                         <div class="d-flex flex-wrap align-items-center mb-2">
                             {% if settings.two_fa_enabled %}
-                                <a href="{{ url_for('disable_2fa') }}" class="btn btn-danger btn-sm mr-2 mb-2" onclick="return confirm('Are you sure you want to disable 2FA?')">Disable 2FA</a>
+                                <a href="{{ url_for('profile') }}" class="btn btn-danger btn-sm me-2 mb-2" onclick="return confirm('Are you sure you want to disable 2FA?')">Manage 2FA</a>
                                 <a href="{{ url_for('enable_2fa') }}" class="btn btn-warning btn-sm mb-2" onclick="return confirm('Are you sure you want to reset 2FA? This will require you to set up your authenticator app again.')">Reset 2FA</a>
                             {% else %}
-                                <a href="{{ url_for('setup_2fa') }}" class="btn btn-success btn-sm mb-2">Enable 2FA</a>
+                                <a href="{{ url_for('enable_2fa') }}" class="btn btn-success btn-sm mb-2">Enable 2FA</a>
                             {% endif %}
                         </div>
                         <small class="form-text text-muted">
@@ -146,18 +149,15 @@
                 </div>
 
 
-                    <!-- START: Site Domain Field -->
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label class="settings-label">Site Domain</label>
                         <input type="url" class="form-control" name="site_domain" value="{{ settings.get('site_domain', '') }}" placeholder="https://www.example.com">
                         <small>Enter the full public URL of your website (e.g., https://www.yourdomain.com). This is used for generating sitemaps and other absolute links.</small>
                     </div>
-                    <!-- END: Site Domain Field -->
 
-                <!-- Analytics -->
                 <div class="settings-section">
                     <h4>Analytics</h4>
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label class="settings-label">Custom Analytics Script</label>
                         <textarea class="form-control" name="custom_analytics" rows="6" placeholder="Paste your analytics script here (e.g., Google Analytics, Plausible, etc.)">{{ settings.custom_analytics }}</textarea>
                         <small>Paste your complete analytics tracking code here. It will be inserted in the header of your site.</small>
@@ -168,15 +168,12 @@
         </div>
     </div>
 </div>
-<!-- Media Modal -->
 <div class="modal fade" id="mediaModal" tabindex="-1" role="dialog" aria-labelledby="mediaModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="mediaModalLabel">Select Image</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="mediaGallery">
         Loading...
@@ -185,7 +182,7 @@
   </div>
 </div>
     <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-<script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
+<script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
 <script>
     async function callAPI(endpoint, method = 'GET', data = null) {
         try {
@@ -230,7 +227,7 @@
         });
     });
     function openMediaModal(targetInputId) {
-        $('#mediaModal').modal('show');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaModal')).show();
         $('#mediaGallery').html('Loading...');
         fetch('/admin/media?format=json')
             .then(res => res.json())
@@ -251,14 +248,13 @@
     }
     function selectMediaImage(inputId, url) {
         $('#' + inputId).val(url);
-        $('#mediaModal').modal('hide');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaModal')).hide();
     }
     function uploadImage(input, targetInputId) {
         const file = input.files[0];
         if (!file) return;
         const formData = new FormData();
         formData.append('file', file);
-        // Add CSRF token from template context
         formData.append('csrf_token', '{{ csrf_token }}');
         fetch('/upload_image', {
             method: 'POST',

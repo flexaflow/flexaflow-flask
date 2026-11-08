@@ -1,0 +1,203 @@
+{% extends "_admin_layout.html" %}
+{% from "_field_macros.html" import simple_input, render_fields %}
+{% block title %}{{ 'New post' if mode == 'add' else 'Edit post' }}{% endblock %}
+
+{% block content %}
+{% if form %}
+	{% set v_title = form.title %}
+	{% set v_description = form.description %}
+	{% set v_content = form.content %}
+	{% set v_category = form.category %}
+	{% set v_tags = form.tags %}
+	{% set v_status = form.status %}
+	{% set v_cover = form.cover_image %}
+	{% set v_pdate = form.pdate %}
+	{% set v_pdatetime = form.pdatetime %}
+{% else %}
+	{% set v_title = post.title %}
+	{% set v_description = post.excerpt or '' %}
+	{% set v_content = post.content %}
+	{% set v_category = post.category.slug if post.category else '' %}
+	{% set v_tags = post.tags_string or '' %}
+	{% set v_status = post.status %}
+	{% set v_cover = post.cover_image or '' %}
+	{% set v_pdate = (post.published_at or '')[:10] %}
+	{% set v_pdatetime = (post.published_at or '')[:16] %}
+{% endif %}
+{% set cur_section = categories[v_category] if v_category in categories and categories[v_category].section_path else none %}
+{% set is_new = mode == 'add' %}
+{% set is_published = v_status == 'published' %}
+
+<form method="post" action="{{ url_for('add_post_route') if is_new else url_for('edit_post', slug=slug) }}" id="postForm" autocomplete="off">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+		<h1 class="h4 mb-2"><span id="formHeading">{{ ('New ' ~ (cur_section.singular_name or cur_section.name)|lower if is_new else 'Edit ' ~ (cur_section.singular_name or cur_section.name)|lower) if cur_section else ('Add new post' if is_new else 'Edit post') }}</span>
+			{% if not is_new %}<span class="badge text-bg-{{ 'success' if is_published else 'warning' }} status-pill align-middle">{{ 'Published' if is_published else 'Draft' }}</span>{% endif %}
+		</h1>
+		<a href="/admin" class="btn btn-sm btn-outline-secondary mb-2">Back to content</a>
+	</div>
+
+	{% if errors %}
+	<div class="alert alert-danger">
+		<strong>Please fix the following:</strong>
+		<ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+	</div>
+	{% endif %}
+
+	<div class="row">
+		<div class="col-xl-9">
+			<div class="mb-3">
+				<label for="titleInput" class="visually-hidden">Title</label>
+				<input type="text" id="titleInput" name="title" class="form-control editor-title" placeholder="Title" value="{{ v_title or '' }}" required maxlength="255">
+			</div>
+
+			<div class="permalink-box mb-3">
+				<span>Permalink:</span>
+				<span>{{ request.host_url.rstrip('/') }}<span id="permalinkPrefix">/{{ cur_section.section_path ~ '/' if cur_section else 'post/' }}</span></span><input type="text" id="slugInput" name="slug" class="form-control form-control-sm d-inline-block" value="{{ slug or '' }}" maxlength="255" {{ 'readonly' if not is_new }} aria-label="Permalink">
+				{% if not is_new %}<small class="text-muted ms-2">(fixed after creation)</small>{% endif %}
+			</div>
+
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>Content</strong></div>
+				<div class="card-body p-0">
+					<textarea id="editor" name="content" class="form-control js-editor border-0" rows="12">{{ v_content or '' }}</textarea>
+				</div>
+			</div>
+
+			{% for cat_slug, category in categories.items() if category.section_path and category.fields_schema %}
+			<div class="card mb-3 section-fields" data-category="{{ cat_slug }}" {{ '' if cat_slug == v_category else 'hidden' }}>
+				<div class="card-header bg-white"><strong>{{ category.name }} details</strong></div>
+				<div class="card-body">
+					{{ render_fields(category.fields_schema, meta_values if cat_slug == v_category else {}) }}
+				</div>
+			</div>
+			{% endfor %}
+
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>Excerpt</strong> <small class="text-muted">— shown in lists and previews</small></div>
+				<div class="card-body">
+					<textarea class="form-control" name="description" rows="2" maxlength="500">{{ v_description or '' }}</textarea>
+				</div>
+			</div>
+		</div>
+
+		<aside class="col-xl-3">
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Publish</div>
+				<div class="card-body">
+					{% if not can_publish %}
+					<p class="small text-muted">Your posts are saved as drafts. An editor will review and publish them.</p>
+					<button type="submit" name="status" value="draft" class="btn btn-primary mb-2">Save draft</button>
+					{% elif is_published and not is_new %}
+					<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Update</button>
+					<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Switch to draft</button>
+					{% else %}
+					<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Publish</button>
+					<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Save draft</button>
+					{% endif %}
+					{% if not is_new and is_published %}
+					<div class="small mt-2"><a href="{{ post_url(post) }}" target="_blank" rel="noopener">View on site</a></div>
+					{% endif %}
+				</div>
+			</div>
+
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Section / category</div>
+				<div class="card-body">
+					<select class="form-select" name="category" id="categorySelect">
+						<option value="" data-path="" data-label="Publish date" data-singular="post">— none —</option>
+						{% for cat_slug, category in categories.items() %}
+						<option value="{{ cat_slug }}" {{ 'selected' if cat_slug == v_category }}
+							data-path="{{ category.section_path }}" data-singular="{{ (category.singular_name or category.name)|lower }}"
+							data-label="{{ category.date_label if category.section_path else 'Publish date' }}"
+							data-time="{{ '1' if category.show_time else '0' }}">{{ category.name }}{% if category.section_path %} (/{{ category.section_path }}/){% endif %}</option>
+						{% endfor %}
+					</select>
+					<small class="form-text text-muted" id="categoryHint">Sections have their own address on the site and their own extra fields.</small>
+					{% if not categories %}<small class="form-text text-muted">No categories yet. Ask an editor to add one under Categories &amp; tags.</small>{% endif %}
+				</div>
+			</div>
+
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white" id="dateLabel">{{ cur_section.date_label if cur_section else 'Publish date' }}</div>
+				<div class="card-body">
+					<input type="date" class="form-control" name="pdate" id="pdateInput" value="{{ v_pdate }}">
+					<input type="datetime-local" class="form-control" name="pdatetime" id="pdatetimeInput" value="{{ v_pdatetime }}" hidden disabled>
+					<small class="form-text text-muted">Leave empty to use today. Lists show the newest date first.</small>
+				</div>
+			</div>
+
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Cover image</div>
+				<div class="card-body">
+					{{ simple_input({'type': 'image'}, 'cover_image', v_cover) }}
+				</div>
+			</div>
+
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Tags</div>
+				<div class="card-body">
+					<input type="text" class="form-control" name="tags" value="{{ v_tags }}" placeholder="comma, separated, tags">
+				</div>
+			</div>
+
+			{% if not is_new and (can('edit_others_content') or post.author_id == current_user.id) %}
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Danger zone</div>
+				<div class="card-body">
+					<button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePostModal">Delete post</button>
+				</div>
+			</div>
+			{% endif %}
+		</aside>
+	</div>
+</form>
+
+{% if not is_new %}
+<div class="modal fade" id="deletePostModal" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog" role="document"><div class="modal-content">
+		<div class="modal-header"><h5 class="modal-title">Delete this post?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+		<div class="modal-body">This permanently removes <strong>{{ v_title }}</strong>.</div>
+		<div class="modal-footer">
+			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+			<form method="post" action="{{ url_for('delete_post_route', slug=slug) }}" class="d-inline">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+				<button type="submit" class="btn btn-danger">Delete</button>
+			</form>
+		</div>
+	</div></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% include "_editor_assets.html" %}
+<script>
+(function ($) {
+	var $select = $('#categorySelect');
+	function sync(initial) {
+		var $opt = $select.find('option:selected');
+		var path = $opt.data('path') || '';
+		var withTime = String($opt.data('time')) === '1';
+		var cat = $select.val();
+		$('#permalinkPrefix').text('/' + (path ? path + '/' : 'post/'));
+		$('#dateLabel').text($opt.data('label') || 'Publish date');
+		$('#categoryHint').text(path ? 'Published at /' + path + '/ on the site.' : 'Sections have their own address on the site and their own extra fields.');
+		$('#pdateInput').prop({hidden: withTime, disabled: withTime});
+		$('#pdatetimeInput').prop({hidden: !withTime, disabled: !withTime});
+		if (withTime && !$('#pdatetimeInput').val() && $('#pdateInput').val()) { $('#pdatetimeInput').val($('#pdateInput').val() + 'T09:00'); }
+		$('.section-fields').each(function () {
+			var on = $(this).data('category') === cat;
+			$(this).prop('hidden', !on).find('input,select,textarea,button').prop('disabled', !on);
+		});
+		if (!initial) {
+			var noun = $opt.data('singular') || 'post';
+			$('#formHeading').text({{ ('"New "' if is_new else '"Edit "')|safe }} + (cat ? noun : 'post'));
+		}
+	}
+	$select.on('change', function () { sync(false); });
+	sync(true);
+})(window.jQuery);
+</script>
+{% endblock %}

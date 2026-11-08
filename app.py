@@ -1,20 +1,14 @@
-# FlexaFlow Flask CMS
-# 
-# Author: Mashiur Rahman
-# Last Updated: April 1 , 2026
 
-#  ***********************  Start Standard And Installed library Import ****************************
-#**************************
 from pprint import pprint
 import os
 import re
+import time
 import unicodedata
 import uuid
 import json
 import datetime
-import pyqrcode
 import io
-import base64
+from urllib.parse import urlencode
 from typing import Dict, Any
 from flask import (
 	Flask,
@@ -31,7 +25,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from jinja2 import Environment, FileSystemLoader, ChoiceLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, ChoiceLoader, BaseLoader, TemplateNotFound, select_autoescape
 from utils.theme_loader import load_theme_functions,copy_theme_static_files
 from functools import wraps
 import pyotp
@@ -61,36 +55,42 @@ import xml.etree.ElementTree as ET
 
 
 from sqlalchemy.exc import SQLAlchemyError
-#  ***********************  End Standard And Installed library Import ****************************
-#*
-#
-#
-#
-#
-#
-#
-#
 
 
-
-
-#
-#  ***********************  Start Local Import ****************************
-#**************************
 from data_store import Page, Post, Category, Tag, SiteSetting
+from data_store import ROLES, ROLE_ADMINISTRATOR, ROLE_EDITOR, ROLE_AUTHOR, ROLE_CONTRIBUTOR, get_latest_posts
+from auth import (
+	login_required,
+	capability_required,
+	current_user,
+	can,
+	login_user,
+	logout_user,
+	is_locked_out,
+	record_failure,
+	clear_failures,
+	verify_password,
+	hash_password,
+	validate_password,
+	validate_role,
+	ROLE_LABELS,
+	ROLE_DESCRIPTIONS,
+)
+import content_store
+from content_store import post_url, list_sections, get_section_by_path, get_section_by_slug
+from content_views import bp as content_blueprint, section_index_view
+from extension_manager import manager as extensions, ExtensionError, CORE_VERSION
+from page_templates import (
+	load_page_templates,
+	parse_fields,
+	fill_defaults,
+	default_values,
+	dump_fields,
+	DEFAULT_TEMPLATE_KEY,
+)
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,64}$")
 
-#  ***********************  End Local Import ****************************
-#**************************
 
-
-
-
-
-
-
-
-#  ***********************  Start Configuration ****************************
-#**************************
 """
 Application Configuration and Initialization
 -----------------------------------------
@@ -120,86 +120,119 @@ Configuration Sources:
 """
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 load_dotenv()
 app = Flask(__name__, static_folder="static")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(16))
+app.url_map.strict_slashes = False
+def _load_secret_key():
+	"""
+	Use SECRET_KEY from the environment when set. Otherwise keep a random key in
+	instance/secret_key so sessions survive restarts (and are not shared by accident).
+	"""
+	env_key = os.getenv("SECRET_KEY")
+	if env_key:
+		return env_key
+	instance_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance")
+	os.makedirs(instance_dir, exist_ok=True)
+	key_path = os.path.join(instance_dir, "secret_key")
+	if not os.path.exists(key_path):
+		with open(key_path, "w", encoding="utf-8") as fh:
+			fh.write(secrets.token_hex(32))
+		try:
+			os.chmod(key_path, 0o600)
+		except OSError:
+			pass
+	with open(key_path, encoding="utf-8") as fh:
+		return fh.read().strip()
 
-# Configure template loading from multiple directories with absolute paths
-base_dir = os.path.dirname(os.path.abspath(__file__))
-app.jinja_loader = ChoiceLoader(
-	[
-		FileSystemLoader(
-			os.path.join(base_dir, "templates")
-		),  # Load from main templates
-		FileSystemLoader(
-			os.path.join(base_dir, "themes", "default", "templates")
-		),  # Load from theme templates
-	]
+
+app.config["SECRET_KEY"] = _load_secret_key()
+app.config.update(
+	SESSION_COOKIE_HTTPONLY=True,
+	SESSION_COOKIE_SAMESITE="Lax",
+	SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "0") == "1",
+	PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=8),
 )
 
+class _ExtensionTemplateLoader(BaseLoader):
+	"""Serves "<extension-slug>/<file>" from extensions/<slug>/templates/ while that extension is active."""
+
+	def get_source(self, environment, template):
+		slug, _, rest = template.partition("/")
+		folder = extensions.template_dir(slug) if rest else None
+		if not folder:
+			raise TemplateNotFound(template)
+		path = os.path.normpath(os.path.join(folder, rest))
+		if not path.startswith(os.path.normpath(folder) + os.sep) or not os.path.isfile(path):
+			raise TemplateNotFound(template)
+		mtime = os.path.getmtime(path)
+		with open(path, encoding="utf-8") as fh:
+			source = fh.read()
+		return source, path, lambda: os.path.isfile(path) and os.path.getmtime(path) == mtime
 
 
+def _theme_loader(theme_name):
+	return ChoiceLoader(
+		[
+			FileSystemLoader(os.path.join(base_dir, "templates")),
+			_ExtensionTemplateLoader(),
+			FileSystemLoader(os.path.join(base_dir, "themes", theme_name, "templates")),
+			FileSystemLoader(os.path.join(base_dir, "themes", "default", "templates")),
+		]
+	)
 
 
+def available_themes():
+	"""Theme folders that contain a templates/ directory."""
+	root = os.path.join(base_dir, "themes")
+	if not os.path.isdir(root):
+		return ["default"]
+	return sorted(
+		name for name in os.listdir(root)
+		if os.path.isdir(os.path.join(root, name, "templates"))
+	)
 
 
+def apply_theme(theme_name):
+	"""Switch the active theme immediately: templates, page templates and static files."""
+	global THEME_NAME, PAGE_TEMPLATES, theme_functions
+	if theme_name not in available_themes():
+		return False
+	THEME_NAME = theme_name
+	loader = _theme_loader(theme_name)
+	app.jinja_loader = loader
+	app.jinja_env.loader = loader
+	app.jinja_env.cache.clear()
+	PAGE_TEMPLATES = load_page_templates(theme_name)
+	app.jinja_env.globals["page_templates"] = PAGE_TEMPLATES
+	copy_theme_static_files(theme_name)
+	theme_functions = load_theme_functions(theme_name)
+	return True
 
 
-
-
-
-
+base_dir = os.path.dirname(os.path.abspath(__file__))
 site_settings = get_site_settings()
-#print(site_settings)
 THEME_NAME = site_settings.get("theme", "default")
 
-
-
-
-
-
-
-@app.context_processor
-def inject_globals():
-	"""
-	Injects global variables into all templates.
-	
-	This context processor makes the following variables available to all templates:
-	- year: Current year
-	- theme functions: All functions from the current theme
-	- settings: Current site settings
-	
-	Returns:
-		dict: Dictionary containing global template variables
-	"""
-	data = {"year": datetime.datetime.now().year}
-	for name, func in theme_functions.items():
-		data[name] = func
-	data["settings"] = get_site_settings()
-	return data
-
-
-
-
-
-
-
+app.jinja_loader = _theme_loader(THEME_NAME)
+PAGE_TEMPLATES = load_page_templates(THEME_NAME)
+app.jinja_env.globals.update(
+	latest_posts=get_latest_posts,
+	post_url=post_url,
+	directory_entries=content_store.list_entries,
+	section_href=lambda cat_slug: (
+		f"/{(get_section_by_slug(cat_slug) or {}).get('section_path')}/"
+		if get_section_by_slug(cat_slug) else f"/category/{cat_slug}"
+	),
+	ENTRY_KINDS=content_store.ENTRY_KINDS,
+	hook=lambda name, *a, **kw: extensions.do_action(name, *a, **kw),
+	apply_filters=lambda name, value, *a: extensions.apply_filters(name, value, *a),
+	ROLE_LABELS=ROLE_LABELS,
+	ROLES=ROLES,
+	page_templates=PAGE_TEMPLATES,
+)
+app.jinja_env.filters["pretty_date"] = content_store.pretty_date
 UPLOAD_DIR = "uploads"
 
-# Image sizes for fit in multiple place
 IMAGE_SIZES = {"thumbnail": (150, 150), "medium": (300, 300), "large": (1024, 1024)}
 
 if not os.path.exists(UPLOAD_DIR):
@@ -208,39 +241,19 @@ if not os.path.exists(UPLOAD_DIR):
 if not os.path.exists(os.path.join(UPLOAD_DIR, "thumbnails")):
 	os.makedirs(os.path.join(UPLOAD_DIR, "thumbnails"))
 
-# Load theme functions
 theme_functions = load_theme_functions(THEME_NAME)
 copy_theme_static_files(THEME_NAME)
 
-# app.secret_key = os.getenv('SECRET_KEY', 'dev_key_change_in_production')
-app.secret_key = secrets.token_hex(32)
 app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
-#  ***********************  End Configuration  ****************************
-#*
 
-#
-#
-#
-#
-#
-#
-#
-
-
-
-
-#  ***********************  start helper functions ****************************
-#**************************
 def slugify(title: str) -> str:
     if not title:
         return ""
 
-    # Normalize (important)
     title = unicodedata.normalize("NFKC", title)
 
-    # Keep letters, marks, numbers, space, dash
     slug = re.sub(r"[^\w\s\-\u0980-\u09FF]", "", title)
 
     slug = slug.strip().lower()
@@ -265,25 +278,21 @@ def create_image_thumbnails(image_path: str, filename: str) -> Dict[str, str]:
 	thumbnails = {}
 	try:
 		with Image.open(image_path) as img:
-			# Convert RGBA to RGB if needed
 			if img.mode == "RGBA":
 				bg = Image.new("RGB", img.size, "white")
 				bg.paste(img, mask=img.split()[3])
 				img = bg
 
-			# Create thumbnails for each size
 			for size_name, dimensions in IMAGE_SIZES.items():
 				thumb = img.copy()
 				thumb.thumbnail(dimensions, Image.Resampling.LANCZOS)
 
-				# Generate thumbnail filename
 				name, ext = os.path.splitext(filename)
 				thumb_filename = f"{name}-{size_name}{ext}"
 				thumb_path = os.path.join(
 					app.config["UPLOAD_FOLDER"], "thumbnails", thumb_filename
 				)
 
-				# Save thumbnail
 				thumb.save(thumb_path, quality=90, optimize=True)
 				thumbnails[size_name] = thumb_filename
 
@@ -293,50 +302,6 @@ def create_image_thumbnails(image_path: str, filename: str) -> Dict[str, str]:
 	return thumbnails
 
 
-def setup_required(f):
-	"""
-	Decorator to ensure the initial setup is complete before accessing a route.
-
-	Args:
-		f (function): The route function to wrap.
-
-	Returns:
-		function: The wrapped function.
-	"""	
-	@wraps(f)
-	def decorated_function(*args, **kwargs):
-		if not db_manager.is_setup_complete():
-			return redirect(url_for("setup"))
-		return f(*args, **kwargs)
-
-	return decorated_function
-
-
-def login_required(f):
-	"""
-	Decorator to require user login for a route.
-
-	Args:
-		f (function): The route function to wrap.
-
-	Returns:
-		function: The wrapped function.
-	"""	
-	@wraps(f)
-	def decorated_function(*args, **kwargs):
-		if not session.get("logged_in"):
-			return redirect(url_for("login"))
-		return f(*args, **kwargs)
-
-	return decorated_function
-
-
-
-
-
-
-
-# Helper functions for database operations
 def get_page_by_slug(slug: str):
 	"""
 	Retrieves a page by its URL slug from the database.
@@ -444,19 +409,28 @@ def delete_post_by_slug(slug: str) -> bool:
 	finally:
 		db.close()
 def update_page_by_slug(slug: str, page_data: dict) -> bool:
-	"""Update a page by slug"""
+	"""Update a page's content, permalink, status, template and custom fields."""
 	db = db_manager.get_session()
 	try:
 		page = db.query(Page).filter(Page.slug == slug).first()
-		if page:
-			page.title = page_data.get("title", page.title)
-			page.content = page_data.get("content", page.content)
-			page.description = page_data.get("description", page.description)
-			page.status = page_data.get("status", page.status)
-			page.updated_at = datetime.datetime.utcnow()
-			db.commit()
-			return True
-		return False
+		if not page:
+			return False
+		new_slug = page_data.get("new_slug") or slug
+		if new_slug != slug:
+			if db.query(Page).filter(Page.slug == new_slug).first():
+				return False
+			page.slug = new_slug
+		page.title = page_data.get("title", page.title)
+		page.content = page_data.get("content", page.content)
+		page.description = page_data.get("description", page.description)
+		page.status = page_data.get("status", page.status)
+		if "template" in page_data:
+			page.template = page_data["template"] or "default"
+		if "fields" in page_data:
+			page.fields = dump_fields(page_data["fields"] or {})
+		page.updated_at = datetime.datetime.utcnow()
+		db.commit()
+		return True
 	except SQLAlchemyError as e:
 		db.rollback()
 		print(f"Error updating page: {str(e)}")
@@ -502,8 +476,13 @@ def update_post_by_slug(slug: str, post_data: dict) -> bool:
 			post.excerpt = post_data.get("excerpt", post.excerpt)
 			post.status = post_data.get("status", post.status)
 			post.updated_at = datetime.datetime.utcnow()
+			if "cover_image" in post_data:
+				post.cover_image = post_data["cover_image"] or None
+			if "meta" in post_data:
+				post.meta = json.dumps(post_data["meta"] or {}, ensure_ascii=False)
+			if post_data.get("published_at"):
+				post.published_at = post_data["published_at"]
 
-			# Handle category
 			if "category" in post_data:
 				category = (
 					db.query(Category)
@@ -512,11 +491,8 @@ def update_post_by_slug(slug: str, post_data: dict) -> bool:
 				)
 				post.category_id = category.id if category else None
 
-			# Handle tags
 			if "tags" in post_data:
-				# Clear existing tags
 				post.tags.clear()
-				# Add new tags
 				for tag_name in post_data["tags"]:
 					tag = db.query(Tag).filter(Tag.name == tag_name).first()
 					if not tag:
@@ -569,9 +545,7 @@ def add_category_to_db(name: str) -> bool:
 	"""
 	db = db_manager.get_session()
 	try:
-		# Use the name as slug (lowercase, hyphens)
 		slug = name.strip().lower().replace(" ", "-")
-		# Check for existing category by name or slug
 		existing = (
 			db.query(Category)
 			.filter((Category.name == name) | (Category.slug == slug))
@@ -605,10 +579,6 @@ def allowed_file(filename):
 	return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-
-
-
-
 def validate_csrf_token():
 	"""
 	Validate the CSRF token from the request headers or form data.
@@ -618,14 +588,9 @@ def validate_csrf_token():
 	"""	
 	token = request.headers.get("X-CSRF-Token")
 	if not token:
-		# Also check form data for CSRF token
 		token = request.form.get("csrf_token")
 	return token and token == session.get("csrf_token")
 
-
-
-
-# app.py
 
 def generate_and_store_sitemap():
 	"""
@@ -638,25 +603,28 @@ def generate_and_store_sitemap():
 		base_url = base_url.strip()
 		print("base url:", base_url)
 		if not base_url:
-			#print("Warning: site_domain not set. Sitemap URLs may be incorrect.")
 			return
-			#base_url = request.url_root.strip()
 
 		if base_url.endswith('/'):
 			base_url = base_url[:-1]
 		
 		pages_data = []
 
-		# Add published posts
 		posts = get_posts()
 		for slug, post in posts.items():
 			if post.get("status") == "published":
 				pages_data.append({
-					"loc": f"{base_url}/post/{slug}",
+					"loc": f"{base_url}{post_url(post)}",
 					"lastmod": post.get('updated_at', '').split('T')[0]
 				})
 
-		# Add published pages
+		for section in list_sections():
+			pages_data.append({"loc": f"{base_url}/{section['section_path']}/", "lastmod": ""})
+		for kind, cfg in content_store.ENTRY_KINDS.items():
+			pages_data.append({"loc": f"{base_url}{cfg['base_path']}", "lastmod": ""})
+			for rec in content_store.list_entries(kind):
+				pages_data.append({"loc": f"{base_url}{cfg['base_path']}{rec['slug']}", "lastmod": ""})
+
 		public_pages = get_pages()
 		for slug, page in public_pages.items():
 			if page.get("status") == "published":
@@ -668,7 +636,6 @@ def generate_and_store_sitemap():
 		sitemap_xml = render_template("sitemap.xml", pages=pages_data)
 
 		
-		# Use the new dedicated database method
 		db_manager.update_sitemap_content(sitemap_xml)
 		print("Sitemap successfully updated in the database.")
 		return True
@@ -676,28 +643,6 @@ def generate_and_store_sitemap():
 		print(f"Error generating sitemap: {str(e)}")
 		return False
 
-
-
-#  ***********************  End helper functions ****************************
-#*
-#
-#
-#
-#
-#
-#
-#
-
-
-
-###
-
-
-
-
-
-
-# Error management and error pages
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -737,7 +682,6 @@ def server_error(e):
 	return render_template("404.html", page={"title": "Error"}), 500
 
 
-
 @app.context_processor
 def inject_csrf_token():
 	"""
@@ -772,264 +716,376 @@ def inject_csrf_token():
 	return {"csrf_token": session["csrf_token"]}
 
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+RESERVED_SLUGS = {
+	"admin", "login", "logout", "search", "post", "page", "category", "tag",
+	"api", "uploads", "static", "sitemap.xml", "setup", "upload_image",
+	"ext",
+}
 
 
+def _safe_next(target):
+	"""Only allow same-site relative redirects after login (prevents open redirects)."""
+	if target and target.startswith("/") and not target.startswith("//"):
+		return target
+	return None
 
 
-
-
-
-
-
-
-
-
-
-#  ***********************   FIRST TIME SETUP AND SETUP ADMIN ****************************
-#**************************
-@app.route("/setup", methods=["GET", "POST"])
-def setup():
-	"""
-	Handles initial system setup and configuration.
-	
-	Features:
-	- First-time system initialization
-	- Admin account creation
-	- Password security enforcement
-	- Optional 2FA setup
-	- Database initialization
-	
-	Methods:
-		GET: Display setup form
-		POST: Process initial configuration
-	
-	Form Fields:
-		- username: Admin username
-		- password: Admin password
-		- confirm_password: Password verification
-		- email: Admin email
-	
-	Validation:
-		- Password minimum length (8 chars)
-		- Password confirmation match
-		- Required field checks
-		- Setup state validation
-	
-	Returns:
-		GET: Setup form or redirect if complete
-		POST: Redirect to login on success
-	
-	Security:
-		- Prevents multiple setups
-		- Secure password hashing
-		- Email validation
-		- Safe initialization
-	"""	
-	if db_manager.is_setup_complete():
-		flash("Setup has already been completed.", "warning")
-		return redirect(url_for("login"))
-
-	if request.method == "POST":
-		username = request.form.get("username")
-		password = request.form.get("password")
-		confirm_password = request.form.get("confirm_password")
-		email = request.form.get("email")
-
-		if password != confirm_password:
-			flash("Passwords do not match.", "error")
-			return render_template("setup.html")
-
-		if len(password) < 8:
-			flash("Password must be at least 8 characters long.", "error")
-			return render_template("setup.html")
-
-		# Generate hashed password
-		hashed_password = generate_password_hash(password)
-
-		# Complete setup with 2FA disabled by default
-		success = db_manager.complete_setup(
-			username=username,
-			password=hashed_password,
-			email=email,
-			enable_2fa=False,
-			two_fa_secret=None,
-		)
-
-		if success:
-			flash("Setup completed successfully!", "success")
-			return redirect(url_for("login"))
-		else:
-			flash("Error during setup. Please try again.", "error")
-
-	return render_template("setup.html")
-
-
-#  ***********************   End FIRST TIME SETUP AND SETUP ADMIN ****************************
-#*
-
-
-
-#  ***********************   Start Login Logout ****************************
-#**************************
 @app.route("/login", methods=["GET", "POST"])
-@setup_required
 def login():
 	"""
-	Handles user authentication with optional 2FA support.
-	
-	Features:
-	- Username/password authentication
-	- Two-factor authentication (2FA) if enabled
-	- Session management
-	- CSRF protection
-	- Secure password verification
-	
-	Methods:
-		GET: Display login form
-		POST: Process login attempt
-			- Step 1: Validate username/password
-			- Step 2: Validate 2FA code (if enabled)
-	
-	Session Management:
-		- pending_2fa: Tracks 2FA verification status
-		- temp_username: Stores username during 2FA
-		- logged_in: Final authentication state
-	
-	Returns:
-		GET: Rendered login template
-		POST: 
-			- Redirect to admin on success
-			- Rendered login template with errors
-			- 2FA verification form if needed
-	
-	Security:
-		- Hashed password comparison
-		- 2FA token verification
-		- Session cleanup on fresh login
-		- Protection against session fixation
-	"""	
-	# Always clear any 2FA session flags on GET (fresh login page)
+	Username and password login, followed by a TOTP code when the account has 2FA.
+
+	Accounts are created from the command line (python manage.py createsuperuser),
+	never from the web. Repeated failures for one username lock it for 15 minutes.
+	"""
+	if db_manager.count_users() == 0:
+		return render_template("no_users.html")
+
+	next_url = _safe_next(request.values.get("next"))
+
 	if request.method == "GET":
-		session.pop("pending_2fa", None)
-		session.pop("temp_username", None)
-		session.pop("logged_in", None)
+		session.pop("pending_2fa_user_id", None)
+		return render_template("login.html", show_2fa=False, username="", next_url=next_url or "")
 
-	if request.method == "POST":
-		username = request.form.get("username")
-		password = request.form.get("password")
-		twofa_code = request.form.get("2fa_code")
+	pending_id = session.get("pending_2fa_user_id")
+	if pending_id:
+		return _finish_two_factor(pending_id, next_url)
 
-		admin_setup = db_manager.get_admin_setup()
-		if not admin_setup:
-			flash("System is not properly configured.", "error")
-			return redirect(url_for("setup"))
+	username = (request.form.get("username") or "").strip()
+	password = request.form.get("password") or ""
+	if not username or not password:
+		flash("Username and password are required!", "error")
+		return render_template("login.html", show_2fa=False, username=username, next_url=next_url or "")
 
-		# If we're in the 2FA verification step
-		if session.get("pending_2fa") and twofa_code:
-			if username != session.get("temp_username"):
-				session.clear()
-				flash("Invalid session. Please login again.", "error")
-				return redirect(url_for("login"))
+	if is_locked_out(username):
+		flash("Too many failed attempts. Please wait 15 minutes and try again.", "error")
+		return render_template("login.html", show_2fa=False, username=username, next_url=next_url or "")
 
-			if admin_setup.get("two_fa_enabled") and admin_setup.get("two_fa_secret"):
-				totp = pyotp.TOTP(admin_setup["two_fa_secret"])
-				if totp.verify(twofa_code):
-					session["logged_in"] = True
-					session.pop("pending_2fa", None)
-					session.pop("temp_username", None)
-					flash("Login successful!", "success")
-					return redirect(url_for("admin"))
-				else:
-					flash("Invalid 2FA code!", "error")
-					return render_template("login.html", show_2fa=True)
-			else:
-				session.clear()
-				flash("2FA is not properly configured. Please login again.", "error")
-				return redirect(url_for("login"))
+	user = db_manager.get_user_by_username(username, include_secrets=True)
+	if not user or not user["is_active"] or not verify_password(user["password_hash"], password):
+		record_failure(username)
+		flash("Invalid credentials!", "error")
+		return render_template("login.html", show_2fa=False, username=username, next_url=next_url or "")
 
-		# First step of login - username/password verification
-		if username and password:
-			if username == admin_setup["username"] and check_password_hash(
-				admin_setup["password"], password
-			):
-				# Check if 2FA is properly enabled and configured
-				if admin_setup.get("two_fa_enabled") and admin_setup.get(
-					"two_fa_secret"
-				):
-					session["pending_2fa"] = True
-					session["temp_username"] = username
-					return render_template("login.html", show_2fa=True)
-				else:
-					# No 2FA needed, clear any 2FA session flags
-					session.pop("pending_2fa", None)
-					session.pop("temp_username", None)
-					session["logged_in"] = True
-					flash("Login successful!", "success")
-					return redirect(url_for("admin"))
-			else:
+	clear_failures(username)
+	if user["two_fa_enabled"] and user["two_fa_secret"]:
+		session["pending_2fa_user_id"] = user["id"]
+		return render_template("login.html", show_2fa=True, username=username, next_url=next_url or "")
 
-				flash("Invalid credentials!", "error")
-		else:
-			flash("Username and password are required!", "error")
-
-	# GET request or form validation failed
-	show_2fa = session.get("pending_2fa", False)
-	return render_template("login.html", show_2fa=show_2fa)
+	login_user(user["id"])
+	flash("Login successful!", "success")
+	return redirect(next_url or url_for("admin"))
 
 
+def _finish_two_factor(user_id, next_url):
+	"""Second login step: verify the TOTP code for the user who passed the password check."""
+	user = db_manager.get_user(user_id, include_secrets=True)
+	if not user or not user["is_active"] or not user["two_fa_secret"]:
+		session.pop("pending_2fa_user_id", None)
+		flash("Login session expired. Please log in again.", "error")
+		return redirect(url_for("login"))
 
+	if is_locked_out(user["username"]):
+		flash("Too many failed attempts. Please wait 15 minutes and try again.", "error")
+		return render_template("login.html", show_2fa=True, username=user["username"], next_url=next_url or "")
+
+	code = (request.form.get("2fa_code") or "").strip()
+	if code and pyotp.TOTP(user["two_fa_secret"]).verify(code, valid_window=1):
+		clear_failures(user["username"])
+		login_user(user["id"])
+		flash("Login successful!", "success")
+		return redirect(next_url or url_for("admin"))
+
+	record_failure(user["username"])
+	flash("Invalid 2FA code!", "error")
+	return render_template("login.html", show_2fa=True, username=user["username"], next_url=next_url or "")
 
 
 @app.route("/logout")
 @login_required
 def logout():
-	"""
-	Handles user logout and session cleanup.
-	
-	Features:
-	- Complete session cleanup
-	- 2FA state reset
-	- User feedback
-	- Secure redirect
-	
-	Security Measures:
-	- Requires active login
-	- Clears all session data
-	- Prevents session fixation
-	- Invalidates authentication state
-	
-	Processing:
-	1. Validates current login
-	2. Clears entire session
-	3. Provides feedback message
-	4. Redirects to login page
-	
-	Returns:
-		302: Redirect to login page with:
-			- Success message
-			- Clean session state
-	
-	Notes:
-		- Also clears 2FA states
-		- Prevents session reuse
-		- Forces new authentication
-	"""	
-	session.clear()
+	"""End the session and return to the login page."""
+	logout_user()
 	flash("You have been logged out.", "info")
 	return redirect(url_for("login"))
 
 
-#  ***********************   End Login Logout ****************************
-#*
+@app.route("/admin/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+	"""
+	The signed-in user's own profile: display name, email, password and 2FA.
+	Changing the password or disabling 2FA requires the current password.
+	"""
+	me = current_user()
+	errors = []
+	if request.method == "POST":
+		action = request.form.get("action", "save")
+		stored = db_manager.get_user(me["id"], include_secrets=True)
+
+		if action == "disable_2fa":
+			if not verify_password(stored["password_hash"], request.form.get("current_password") or ""):
+				errors.append("Current password is incorrect.")
+			else:
+				db_manager.update_user(me["id"], two_fa_enabled=False, two_fa_secret=None)
+				flash("Two-factor authentication has been disabled.", "success")
+				return redirect(url_for("profile"))
+		else:
+			display_name = (request.form.get("display_name") or "").strip()[:150]
+			email = (request.form.get("email") or "").strip()
+			changes = {"display_name": display_name or None, "email": email}
+			if not EMAIL_RE.match(email):
+				errors.append("Enter a valid email address.")
+			new_password = request.form.get("new_password") or ""
+			if new_password:
+				if not verify_password(stored["password_hash"], request.form.get("current_password") or ""):
+					errors.append("Current password is incorrect.")
+				elif new_password != request.form.get("confirm_password"):
+					errors.append("New passwords do not match.")
+				else:
+					problem = validate_password(new_password, me["username"])
+					if problem:
+						errors.append(problem)
+					else:
+						changes["password_hash"] = hash_password(new_password)
+			if not errors:
+				try:
+					db_manager.update_user(me["id"], **changes)
+					flash("Profile updated.", "success")
+					return redirect(url_for("profile"))
+				except ValueError as e:
+					errors.append(str(e))
+
+	return render_template(
+		"user_form.html",
+		mode="profile",
+		user=current_user(),
+		form=None,
+		errors=errors,
+		roles=ROLES,
+		role_labels=ROLE_LABELS,
+	)
 
 
+@app.context_processor
+def inject_auth_context():
+	return {"current_user": current_user(), "can": can}
 
 
+@app.context_processor
+def inject_globals():
+	"""
+	Variables every template can use: year, the active theme's helper functions,
+	and the site settings (settings.site_title, settings.menu_items, ...).
+	"""
+	data = {"year": datetime.datetime.now().year}
+	for name, func in theme_functions.items():
+		data[name] = func
+	data["settings"] = get_site_settings()
+	data["nav_sections"] = list_sections()
+	data["ext_admin_menus"] = extensions.admin_menus() if request and request.path.startswith(("/admin", "/page", "/post")) else []
+	return data
 
 
+@app.errorhandler(403)
+def forbidden(e):
+	return render_template("error.html", code=403, message="You do not have permission to do that."), 403
 
-#  ***********************   Start Administrator and  two-factor authentication configuration  ****************************
-#**************************
+
+@app.before_request
+def csrf_protect():
+	"""
+	Every state-changing request (POST, PUT, PATCH, DELETE) must carry the session's
+	CSRF token, either as the X-CSRF-Token header (fetch/XHR) or a csrf_token form field.
+	"""
+	if request.method in ("GET", "HEAD", "OPTIONS") or request.endpoint in (None, "static"):
+		return None
+	expected = session.get("csrf_token")
+	sent = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+	if not expected or not sent or not secrets.compare_digest(sent, expected):
+		abort(403)
+	return None
+
+
+def _user_form_from_request():
+	return {
+		"username": (request.form.get("username") or "").strip(),
+		"email": (request.form.get("email") or "").strip(),
+		"display_name": (request.form.get("display_name") or "").strip()[:150],
+		"role": request.form.get("role") or ROLE_CONTRIBUTOR,
+		"is_active": request.form.get("is_active") == "on",
+	}
+
+
+@app.route("/admin/users")
+@capability_required("manage_users")
+def users_index():
+	"""List all accounts."""
+	return render_template(
+		"users.html",
+		users=db_manager.list_users(),
+		role_labels=ROLE_LABELS,
+		role_descriptions=ROLE_DESCRIPTIONS,
+	)
+
+
+@app.route("/admin/users/new", methods=["GET", "POST"])
+@capability_required("manage_users")
+def user_new():
+	"""Create an account from the web UI (administrators only). The first account is made with the CLI."""
+	errors = []
+	form = {"username": "", "email": "", "display_name": "", "role": ROLE_CONTRIBUTOR, "is_active": True}
+	if request.method == "POST":
+		form = _user_form_from_request()
+		password = request.form.get("password") or ""
+		confirm = request.form.get("confirm_password") or ""
+		if not USERNAME_RE.match(form["username"]):
+			errors.append("Username must be 3-64 characters: letters, digits, '.', '_' or '-'.")
+		if not EMAIL_RE.match(form["email"]):
+			errors.append("Enter a valid email address.")
+		if validate_role(form["role"]):
+			errors.append(validate_role(form["role"]))
+		if password != confirm:
+			errors.append("Passwords do not match.")
+		problem = validate_password(password, form["username"])
+		if problem:
+			errors.append(problem)
+		if not errors:
+			try:
+				db_manager.create_user(
+					username=form["username"],
+					email=form["email"],
+					password_hash=hash_password(password),
+					role=form["role"],
+					display_name=form["display_name"] or None,
+				)
+				flash(f"User '{form['username']}' created.", "success")
+				return redirect(url_for("users_index"))
+			except ValueError as e:
+				errors.append(str(e))
+	return render_template(
+		"user_form.html", mode="create", user=None, form=form, errors=errors,
+		roles=ROLES, role_labels=ROLE_LABELS, role_descriptions=ROLE_DESCRIPTIONS,
+	)
+
+
+@app.route("/admin/users/<int:user_id>", methods=["GET", "POST"])
+@capability_required("manage_users")
+def user_edit(user_id):
+	"""Edit another account: role, status, email, display name, and optionally reset its password."""
+	target = db_manager.get_user(user_id)
+	if not target:
+		abort(404)
+	me = current_user()
+	is_self = target["id"] == me["id"]
+	errors = []
+	form = dict(target)
+	if request.method == "POST":
+		posted = _user_form_from_request()
+		form.update({"email": posted["email"], "display_name": posted["display_name"]})
+		if is_self:
+			posted["role"] = target["role"]
+			posted["is_active"] = True
+		form.update({"role": posted["role"], "is_active": posted["is_active"]})
+
+		if not EMAIL_RE.match(posted["email"]):
+			errors.append("Enter a valid email address.")
+		if validate_role(posted["role"]):
+			errors.append(validate_role(posted["role"]))
+		demoting = target["role"] == ROLE_ADMINISTRATOR and (
+			posted["role"] != ROLE_ADMINISTRATOR or not posted["is_active"]
+		)
+		if demoting and db_manager.count_active_administrators() <= 1:
+			errors.append("This is the last active administrator. Make another administrator first.")
+
+		changes = {
+			"email": posted["email"],
+			"display_name": posted["display_name"] or None,
+			"role": posted["role"],
+			"is_active": posted["is_active"],
+		}
+		new_password = request.form.get("new_password") or ""
+		if new_password:
+			if new_password != (request.form.get("confirm_password") or ""):
+				errors.append("Passwords do not match.")
+			else:
+				problem = validate_password(new_password, target["username"])
+				if problem:
+					errors.append(problem)
+				else:
+					changes["password_hash"] = hash_password(new_password)
+
+		if not errors:
+			try:
+				db_manager.update_user(user_id, **changes)
+				flash("User updated.", "success")
+				return redirect(url_for("user_edit", user_id=user_id))
+			except ValueError as e:
+				errors.append(str(e))
+
+	return render_template(
+		"user_form.html", mode="edit", user=target, form=form, errors=errors,
+		roles=ROLES, role_labels=ROLE_LABELS, role_descriptions=ROLE_DESCRIPTIONS,
+		is_self=is_self,
+	)
+
+
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@capability_required("manage_users")
+def user_delete(user_id):
+	"""Delete an account. Its pages and posts are handed to the administrator doing the deletion."""
+	me = current_user()
+	target = db_manager.get_user(user_id)
+	if not target:
+		abort(404)
+	if target["id"] == me["id"]:
+		flash("You cannot delete your own account.", "error")
+	elif target["role"] == ROLE_ADMINISTRATOR and db_manager.count_active_administrators() <= 1:
+		flash("This is the last active administrator and cannot be deleted.", "error")
+	elif db_manager.delete_user(user_id, reassign_to_id=me["id"]):
+		flash(f"User '{target['username']}' deleted. Their content now belongs to you.", "success")
+	else:
+		flash("Could not delete that user.", "error")
+	return redirect(url_for("users_index"))
+
+
+@app.route("/admin/enable-2fa")
+@login_required
+def enable_2fa():
+	"""Start (or restart) 2FA enrolment: create a pending secret, then show the QR code."""
+	session["pending_2fa_secret"] = pyotp.random_base32()
+	flash("Scan the QR code with your authenticator app, then enter the code to confirm.", "success")
+	return redirect(url_for("setup_2fa"))
+
+
+@app.route("/admin/2fa-setup", methods=["GET", "POST"])
+@login_required
+def setup_2fa():
+	"""Confirm 2FA enrolment for the current user. Saved only after a correct code is entered."""
+	me = current_user()
+	secret = session.get("pending_2fa_secret")
+	if not secret:
+		return redirect(url_for("enable_2fa"))
+
+	if request.method == "POST":
+		if request.form.get("cancel_2fa") == "1":
+			session.pop("pending_2fa_secret", None)
+			flash("Two-factor authentication setup was canceled.", "info")
+			return redirect(url_for("profile"))
+		code = (request.form.get("verify_2fa_code") or "").strip()
+		if pyotp.TOTP(secret).verify(code, valid_window=1):
+			db_manager.update_user(me["id"], two_fa_secret=secret, two_fa_enabled=True)
+			session.pop("pending_2fa_secret", None)
+			flash("Two-factor authentication is now active.", "success")
+			return redirect(url_for("profile"))
+		flash("Invalid code. Please try again.", "danger")
+
+	provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
+		name=me["email"], issuer_name="FlexaFlow CMS"
+	)
+	return render_template("setup_2fa.html", provisioning_uri=provisioning_uri, secret=secret)
+
 
 @app.route("/admin")
 @login_required
@@ -1042,7 +1098,6 @@ def admin():
 	Returns:
 		str: Rendered admin dashboard template with list of all pages and posts
 	"""	
-	# Get all pages (both published and draft)
 	all_pages = []
 	pages = get_pages()
 	draft_pages = get_draft_pages()
@@ -1057,7 +1112,6 @@ def admin():
 		page_copy["slug"] = slug
 		all_pages.append(page_copy)
 
-	# Get all posts (both published and draft)
 	all_posts = []
 	posts = get_posts()
 	draft_posts = get_draft_posts()
@@ -1072,15 +1126,33 @@ def admin():
 		post_copy["slug"] = slug
 		all_posts.append(post_copy)
 
-	return render_template("admin.html", pages=all_pages, posts=all_posts)
-
-
-
-
+	me = current_user()
+	if not can("edit_others_content"):
+		all_posts = [p for p in all_posts if p.get("author_id") == me["id"]]
+	if not can("manage_pages"):
+		all_pages = []
+	users_by_id = {u["id"]: u for u in db_manager.list_users()}
+	for p in all_posts:
+		p["public_url"] = post_url(p)
+	all_posts.sort(key=lambda p: str(p.get("created_at") or ""), reverse=True)
+	per_page = 10
+	total_posts = len(all_posts)
+	total_pages = max(1, (total_posts + per_page - 1) // per_page)
+	try:
+		post_page = int(request.args.get("ppage", 1))
+	except (TypeError, ValueError):
+		post_page = 1
+	post_page = max(1, min(post_page, total_pages))
+	post_rows = all_posts[(post_page - 1) * per_page: post_page * per_page]
+	return render_template(
+		"admin.html", pages=all_pages, posts=all_posts, post_rows=post_rows,
+		post_page=post_page, post_pages=total_pages, post_per_page=per_page,
+		users_by_id=users_by_id, role_labels=ROLE_LABELS,
+	)
 
 
 @app.route("/admin/settings")
-@login_required
+@capability_required("manage_settings")
 def settings():
 	"""
 	Manages site-wide settings and configuration.
@@ -1117,20 +1189,17 @@ def settings():
 		- Secure settings storage
 	"""	
 	site_settings = get_site_settings()
-	admin_setup = db_manager.get_admin_setup()
-	# Ensure two_fa_enabled reflects the admin's real 2FA status
-	site_settings["two_fa_enabled"] = bool(
-		admin_setup and admin_setup.get("two_fa_enabled")
-	)
+	site_settings["two_fa_enabled"] = bool(current_user()["two_fa_enabled"])
 	return render_template(
 		"settings.html",
 		settings=site_settings,
-		pages=get_pages()
+		pages=get_pages(),
+		themes=available_themes(),
 	)
 
 
 @app.route("/admin/menu")
-@login_required
+@capability_required("manage_settings")
 def menu_editor():
 	"""
 	Provides interface for managing site navigation menu.
@@ -1168,11 +1237,34 @@ def menu_editor():
 	"""	
 	settings = get_site_settings()
 	menu_items = settings.get("menu_items", [])
-	return render_template("menu-editor.html", menu_items=menu_items, pages=get_pages())
+	quick_links = [{"label": s["name"], "url": f"/{s['section_path']}/"} for s in list_sections()]
+	for kind, cfg in content_store.ENTRY_KINDS.items():
+		quick_links.append({"label": cfg["label"], "url": cfg["base_path"]})
+		quick_links += [{"label": label, "url": f"{cfg['base_path']}group/{g}"} for g, label in cfg["groups"] if g != cfg["groups"][0][0] and g in cfg.get("public_groups", [])]
+	return render_template("menu-editor.html", menu_items=menu_items, pages=get_pages(), quick_links=quick_links)
+
+
+def _clean_menu(items, depth=0):
+	"""Menu items as {label, url, children[]}: keeps only safe link targets, at most two levels deep."""
+	cleaned = []
+	for item in items if isinstance(items, list) else []:
+		if not isinstance(item, dict):
+			continue
+		label = str(item.get("label") or "").strip()[:100]
+		url = str(item.get("url") or "").strip()[:500]
+		if url and not re.match(r"^(https?://|mailto:|tel:|/|#)", url):
+			url = ""
+		children = _clean_menu(item.get("children"), depth + 1) if depth == 0 else []
+		if label and (url or children):
+			entry = {"label": label, "url": url}
+			if children:
+				entry["children"] = children
+			cleaned.append(entry)
+	return cleaned
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
-@login_required
+@capability_required("manage_settings")
 def api_settings():
 	"""
 	RESTful API endpoint for managing site settings.
@@ -1210,8 +1302,12 @@ def api_settings():
 	if request.method == "GET":
 		return jsonify(get_site_settings())
 	elif request.method == "POST":
-		data = request.json
+		data = request.json or {}
+		if "theme" in data and data["theme"] not in available_themes():
+			return jsonify({"status": "error", "message": "Unknown theme"}), 400
 		success = update_site_settings(data)
+		if success and "theme" in data and data["theme"] != THEME_NAME:
+			apply_theme(data["theme"])
 		if success:
 			return jsonify({"status": "success", "message": "Settings updated"})
 		else:
@@ -1219,15 +1315,6 @@ def api_settings():
 				jsonify({"status": "error", "message": "Failed to update settings"}),
 				500,
 			)
-
-
-
-
-
-
-
-
-
 
 
 @app.route('/api/check_slug')
@@ -1252,7 +1339,6 @@ def api_check_slug():
 
 	suggested = slug
 	if taken:
-		# append a short suffix until unique
 		base = re.sub(r"[^a-z0-9-]", '', slug.lower())
 		suffix = 2
 		while True:
@@ -1271,7 +1357,7 @@ def api_check_slug():
 
 
 @app.route("/api/menu", methods=["GET", "POST"])
-@login_required
+@capability_required("manage_settings")
 def api_menu():
 	"""
 	RESTful API endpoint for managing site navigation menu.
@@ -1302,7 +1388,7 @@ def api_menu():
 		settings = get_site_settings()
 		return jsonify(settings.get("menu_items", []))
 	elif request.method == "POST":
-		data = request.json
+		data = _clean_menu(request.json)
 		settings = get_site_settings()
 		settings["menu_items"] = data
 		success = update_site_settings(settings)
@@ -1313,7 +1399,7 @@ def api_menu():
 
 
 @app.route("/admin/category/add", methods=["POST"])
-@login_required
+@capability_required("manage_taxonomy")
 def add_category():
 	"""
 	Handles addition of new post categories.
@@ -1346,7 +1432,6 @@ def add_category():
 		- SQL injection prevention
 	"""	
 	name = request.form.get("name", "").strip()
-	#print("category name on add" ,name)
 	if not name:
 		flash("Category name required!", "error")
 		return redirect(url_for("manage_tags_and_catagories"))
@@ -1359,7 +1444,7 @@ def add_category():
 
 
 @app.route("/admin/media")
-@login_required
+@capability_required("upload_media")
 def media_library():
 	"""
 	Displays and manages the media library.
@@ -1387,9 +1472,10 @@ def media_library():
 	"""	
 	page = max(1, int(request.args.get("page", 1)))
 	search = request.args.get("search")
-	media = db_manager.get_media_library(page=page, search=search)
+	media = db_manager.get_media_library(page=page, search=search) or {
+		"items": [], "total": 0, "page": 1, "total_pages": 1, "per_page": 10,
+	}
 
-	# Return JSON if requested
 	if request.args.get("format") == "json":
 		return jsonify(media)
 
@@ -1397,7 +1483,7 @@ def media_library():
 
 
 @app.route("/admin/media/upload", methods=["POST"])
-@login_required
+@capability_required("upload_media")
 def upload_media():
 	"""
 	Handles bulk media file uploads for the media library.
@@ -1446,24 +1532,19 @@ def upload_media():
 
 		if file:
 			try:
-				# Generate unique filename
 				original_filename = secure_filename(file.filename)
 				filename = str(uuid.uuid4()) + os.path.splitext(original_filename)[1]
 				file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
-				# Save original file
 				file.save(file_path)
 
-				# Create thumbnails
 				thumbnails = create_image_thumbnails(file_path, filename)
 
-				# Get image dimensions and size
 				with Image.open(file_path) as img:
 					width, height = img.size
 
 				file_size = os.path.getsize(file_path)
 
-				# Add to media library
 				media_data = {
 					"filename": filename,
 					"original_filename": original_filename,
@@ -1501,18 +1582,8 @@ def upload_media():
 	return jsonify({"success": True, "files": results})
 
 
-
-
-
-
-
-
-
-
-
-
-@app.route("/admin/export", methods=["GET"])
-@login_required
+@app.route("/admin/export/xml", methods=["GET"])
+@capability_required("manage_settings")
 def export_content():
 	"""
 	Exports all site content as XML for backup or migration.
@@ -1551,13 +1622,11 @@ def export_content():
 	export_time = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 	site_settings = get_site_settings()
 	site_title = site_settings.get("site_title", "site").strip().lower().replace(" ", "_")
-	# Compose filename: flexaflow(v1.0.0)_sitename_YYYYMMDDTHHMMSSZ.xml
 	timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
 	filename = f"flexaflow_{FLEXAFLOW_VERSION}_export_{site_title}_{timestamp}.xml"
 
 	root = ET.Element("flexaflow_export", version="1.0", exported_at=export_time)
 
-	# Export pages
 	pages_elem = ET.SubElement(root, "pages")
 	for slug, page in get_pages().items():
 		page_elem = ET.SubElement(pages_elem, "page", slug=slug)
@@ -1565,7 +1634,6 @@ def export_content():
 			child = ET.SubElement(page_elem, k)
 			child.text = str(v) if v is not None else ""
 
-	# Export posts
 	posts_elem = ET.SubElement(root, "posts")
 	for slug, post in get_posts().items():
 		post_elem = ET.SubElement(posts_elem, "post", slug=slug)
@@ -1579,7 +1647,6 @@ def export_content():
 				child = ET.SubElement(post_elem, k)
 				child.text = str(v) if v is not None else ""
 
-	# Serialize XML to memory
 	xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
 	return send_file(
 		io.BytesIO(xml_bytes),
@@ -1589,8 +1656,8 @@ def export_content():
 	)
 
 
-@app.route("/admin/import", methods=["GET", "POST"])
-@login_required
+@app.route("/admin/import/xml", methods=["GET", "POST"])
+@capability_required("manage_settings")
 def import_content():
 	"""
 	Handles import of content from XML file.
@@ -1623,14 +1690,12 @@ def import_content():
 		try:
 			tree = ET.parse(file)
 			root = tree.getroot()
-			# Get existing slugs
 			existing_page_slugs = set(get_pages().keys())
 			existing_post_slugs = set(get_posts().keys())
 			skipped_pages = []
 			skipped_posts = []
 			imported_pages = 0
 			imported_posts = 0
-			# Import pages
 			pages_elem = root.find("pages")
 			if pages_elem is not None:
 				for page_elem in pages_elem.findall("page"):
@@ -1641,7 +1706,6 @@ def import_content():
 					page_data = {child.tag: child.text for child in page_elem}
 					add_page(slug, page_data)
 					imported_pages += 1
-			# Import posts
 			posts_elem = root.find("posts")
 			if posts_elem is not None:
 				for post_elem in posts_elem.findall("post"):
@@ -1668,17 +1732,8 @@ def import_content():
 	return render_template("import.html")
 
 
-
-
-
-
-
-
-
-
-
 @app.route("/admin/media/<int:media_id>", methods=["GET", "PUT", "DELETE"])
-@login_required
+@capability_required("manage_media")
 def manage_media(media_id):
 	"""
 	RESTful endpoint for managing individual media items.
@@ -1734,7 +1789,7 @@ def manage_media(media_id):
 
 
 @app.route("/admin/tags-and-catagories", methods=["GET", "POST"])
-@login_required
+@capability_required("manage_taxonomy")
 def manage_tags_and_catagories():
 	"""
 	Manages post categories and tags.
@@ -1774,7 +1829,7 @@ def manage_tags_and_catagories():
 
 
 @app.route("/admin/category/delete/<slug>", methods=["POST"])
-@login_required
+@capability_required("manage_taxonomy")
 def delete_category(slug):
 	"""
 	Handles deletion of unused categories.
@@ -1799,9 +1854,8 @@ def delete_category(slug):
 		- Usage validation
 		- Transaction safety
 	"""	
-	# Only allow deleting unused categories
 	categories = get_categories() or {}
-	if slug in categories and categories[slug].get("count", 0) == 0:
+	if slug in categories and categories[slug].get("post_count", 0) == 0:
 		db = db_manager.get_session()
 		try:
 			category = db.query(Category).filter(Category.slug == slug).first()
@@ -1822,7 +1876,7 @@ def delete_category(slug):
 
 
 @app.route("/admin/tag/add", methods=["POST"])
-@login_required
+@capability_required("manage_taxonomy")
 def add_tag():
 	"""
 	Handles creation of new post tags.
@@ -1878,7 +1932,7 @@ def add_tag():
 
 
 @app.route("/admin/tag/delete/<int:tag_id>", methods=["POST"])
-@login_required
+@capability_required("manage_taxonomy")
 def delete_tag(tag_id):
 	"""
 	Handles deletion of unused tags.
@@ -1929,234 +1983,6 @@ def delete_tag(tag_id):
 	return redirect(url_for("manage_tags_and_catagories"))
 
 
-
-
-
-
-
-
-
-
-
-
-
-@app.route("/admin/2fa-setup", methods=["GET", "POST"])
-@login_required
-def setup_2fa():
-	"""
-	Handles setup of two-factor authentication (2FA).
-	
-	Features:
-	- Generates QR code for 2FA setup
-	- Validates 2FA verification code
-	- Stores 2FA secret securely
-	- Supports setup cancellation
-	- Handles legacy configurations
-	
-	Routes:
-		GET: Shows 2FA setup page with QR code
-		POST: Handles verification or cancellation
-		
-	Returns:
-		GET: Rendered 2FA setup template with QR code
-		POST: Redirect to admin or login page
-		
-	Security:
-	- Requires user to be logged in
-	- Uses secure random token generation
-	- Stores secrets securely in database
-	- Validates codes
-	"""
-
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Use secret from session if present, else fallback to admin_setup (for legacy)
-	two_fa_secret = session.get("pending_2fa_secret") or admin_setup.get(
-		"two_fa_secret"
-	)
-	if not two_fa_secret:
-		return redirect(url_for("enable_2fa"))
-
-	# Handle POST: verify code or cancel 2FA
-	if request.method == "POST":
-		if request.form.get("cancel_2fa") == "1":
-			session.pop("pending_2fa_secret", None)
-			flash("Two-factor authentication setup was canceled.", "info")
-			return redirect(url_for("login"))
-		code = request.form.get("verify_2fa_code", "").strip()
-		totp = pyotp.TOTP(two_fa_secret)
-		if totp.verify(code):
-			# Save 2FA secret and enable 2FA only after verification
-			db_manager.complete_setup(
-				username=admin_setup["username"],
-				password=admin_setup["password"],
-				email=admin_setup["email"],
-				enable_2fa=True,
-				two_fa_secret=two_fa_secret,
-			)
-			session.pop("pending_2fa_secret", None)
-			flash("Two-factor authentication is now active and verified!", "success")
-			return redirect(url_for("admin"))
-		else:
-			flash("Invalid code. Please try again.", "danger")
-
-	provisioning_uri = pyotp.totp.TOTP(two_fa_secret).provisioning_uri(
-		name=admin_setup["email"], issuer_name="FlexaFlow CMS"
-	)
-	qr = pyqrcode.create(provisioning_uri)
-	buffer = io.BytesIO()
-	qr.svg(buffer, scale=5)
-	qr_code = base64.b64encode(buffer.getvalue()).decode()
-
-	return render_template("setup_2fa.html", qr_code=qr_code, secret=two_fa_secret)
-
-
-
-
-
-
-
-
-@app.route("/admin/disable-2fa")
-@login_required
-def disable_2fa():
-	"""
-	Disables two-factor authentication for the admin account.
-	
-	Features:
-	- Secure 2FA deactivation
-	- Configuration update
-	- Secret removal
-	- User feedback
-	- State validation
-	
-	Security Measures:
-	- Requires admin login
-	- Validates system configuration
-	- Removes 2FA secrets
-	- Updates authentication state
-	
-	Processing Steps:
-	1. Verify admin setup exists
-	2. Clear 2FA configuration
-	3. Update admin settings
-	4. Provide user feedback
-	
-	Returns:
-		302: Redirect to settings with:
-			- Success/error message
-			- Updated 2FA status
-	
-	Notes:
-		- Immediate effect
-		- Requires re-setup to enable
-		- Maintains password security
-	"""
-	
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Update the admin setup to disable 2FA
-	success = db_manager.complete_setup(
-		username=admin_setup["username"],
-		password=admin_setup["password"],
-		email=admin_setup["email"],
-		enable_2fa=False,
-		two_fa_secret=None,
-	)
-
-	if success:
-		flash("Two-factor authentication has been disabled.", "success")
-	else:
-		flash("Failed to disable two-factor authentication.", "error")
-
-	return redirect(url_for("settings"))
-
-
-@app.route("/admin/enable-2fa")
-@login_required
-def enable_2fa():
-	"""
-	Initiates two-factor authentication setup process.
-	
-	Features:
-	- Generates new 2FA secret
-	- Stores secret temporarily in session
-	- Validates system configuration
-	- User feedback
-	- Secure secret generation
-	
-	Process Flow:
-	1. Verify admin configuration
-	2. Generate secure random secret
-	3. Store in session temporarily
-	4. Redirect to setup process
-	
-	Returns:
-		302: Redirect to:
-			- 2FA setup page with new secret
-			- Setup page if system not configured
-			
-	Security:
-		- Admin authentication required
-		- Secure secret generation
-		- Temporary session storage
-		- System validation
-	"""
-
-	admin_setup = db_manager.get_admin_setup()
-	if not admin_setup:
-		flash("System is not properly configured.", "error")
-		return redirect(url_for("setup"))
-
-	# Generate new 2FA secret and store in session only
-	two_fa_secret = pyotp.random_base32()
-	session["pending_2fa_secret"] = two_fa_secret
-	flash(
-		"Two-factor authentication setup started. Please scan the QR code and verify.",
-		"success",
-	)
-	return redirect(url_for("setup_2fa"))
-
-
-#  ***********************   End Administrator and  two-factor authentication configuration  ****************************
-#*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#  *********************** Start Page and Post Serve  ****************************
-#**************************
-
-
 @app.route("/")
 def home():
 	"""
@@ -2175,9 +2001,14 @@ def home():
 		Redirects to setup page if system is not configured
 	"""
 
-	# Check if system is configured, if not redirect to setup
 	if not db_manager.is_setup_complete():
-		return redirect(url_for("setup"))
+		return render_template("no_users.html")
+
+	homepage_slug = str(get_site_settings().get("homepage") or "").strip()
+	if homepage_slug:
+		home_page = get_page_by_slug(homepage_slug)
+		if home_page and home_page.get("status") == "published":
+			return view_page(homepage_slug)
 
 	try:
 		page = max(1, int(request.args.get("page", 1)))
@@ -2196,7 +2027,6 @@ def home():
 				post_copy["slug"] = slug
 				published_posts.append(post_copy)
 
-		# Sort by created_at or updated_at
 		published_posts.sort(
 			key=lambda x: x.get("created_at", x.get("updated_at", "")), reverse=True
 		)
@@ -2226,7 +2056,6 @@ def home():
 		)
 
 		categories = get_categories()
-		#print(get_categories())
 		if not isinstance(categories, dict):
 			categories = {}
 
@@ -2238,7 +2067,6 @@ def home():
 		}
 
 
-		#pprint(posts)
 		return render_template(
 			"main/master.html",
 			page=default_page,
@@ -2276,7 +2104,6 @@ def home():
 		)
 
 
-
 @app.route("/post/<slug>")
 def view_post(slug):
 	"""
@@ -2303,16 +2130,15 @@ def view_post(slug):
 	if not post:
 		abort(404)
 
-	# Only show published posts to public (unless in admin mode)
+	if post.get("status") == "published" and (post.get("category") or {}).get("section_path"):
+		return redirect(post_url(post), code=301)
+
 	if post.get("status") != "published":
-		# You can add admin authentication check here
-		# For now, we'll show drafts too
 		pass
 
 	categories = get_categories()
 	tags = get_tags()
 
-	# Get related posts
 	related_posts = []
 	post_tags = post.get("tags", [])
 	all_posts = get_posts()
@@ -2320,14 +2146,13 @@ def view_post(slug):
 	for other_slug, other_post in all_posts.items():
 		if other_slug != slug and other_post.get("status") == "published":
 			other_tags = other_post.get("tags", [])
-			if set(post_tags) & set(other_tags):  # If there are common tags
+			if set(post_tags) & set(other_tags):
 				other_post_copy = other_post.copy()
 				other_post_copy["slug"] = other_slug
 				related_posts.append(other_post_copy)
 				if len(related_posts) >= 3:
 					break
 
-	# Add slug to post for template
 	post["slug"] = slug
 
 	return render_template(
@@ -2337,6 +2162,28 @@ def view_post(slug):
 		categories=categories,
 		tags=tags,
 	)
+
+
+PUBLIC_PER_PAGE = 10
+
+
+def paginate_list(items, per_page=PUBLIC_PER_PAGE):
+	"""Slice ``items`` for the current ?page= and return (slice, pager) for theme templates."""
+	try:
+		page = int(request.args.get("page", 1))
+	except (TypeError, ValueError):
+		page = 1
+	total_pages = max(1, (len(items) + per_page - 1) // per_page)
+	page = max(1, min(page, total_pages))
+	pager = {
+		"current_page": page,
+		"total_pages": total_pages,
+		"pages": list(range(1, total_pages + 1)),
+		"prev_page": page - 1 if page > 1 else None,
+		"next_page": page + 1 if page < total_pages else None,
+		"query": urlencode({k: v for k, v in request.args.items() if k != "page" and v}),
+	}
+	return items[(page - 1) * per_page: page * per_page], pager
 
 
 @app.route("/category/<category_slug>")
@@ -2374,12 +2221,13 @@ def view_category(category_slug):
 
 
 	categories = get_categories()
+	if category_slug in categories and categories[category_slug].get("section_path"):
+		return redirect(f"/{categories[category_slug]['section_path']}/", code=301)
 	if category_slug in categories:
 		category_posts = []
 		all_posts = get_posts()
 
 		for slug, post in all_posts.items():
-			# Corrected line:
 			if (
 				(post.get("category") or {}).get("slug") == category_slug
 				and post.get("status") == "published"
@@ -2389,11 +2237,13 @@ def view_category(category_slug):
 				category_posts.append(post_copy)
 
 
+		category_posts.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
 		category_data = categories[category_slug]
 		category_data["count"] = len(category_posts)
+		page_posts, pager = paginate_list(category_posts)
 
 		return render_template(
-			"category.html", category=category_data, posts=category_posts
+			"category.html", category=category_data, posts=page_posts, pager=pager
 		)
 	else:
 		abort(404)
@@ -2444,10 +2294,13 @@ def view_tag(tag_name):
 			post_copy["slug"] = slug
 			tagged_posts.append(post_copy)
 
+	tagged_posts.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+	page_posts, pager = paginate_list(tagged_posts)
 	return render_template(
 		"tag.html",
 		tag={"name": tag_name, "count": len(tagged_posts)},
-		posts=tagged_posts,
+		posts=page_posts,
+		pager=pager,
 	)
 
 
@@ -2489,180 +2342,168 @@ def search():
 					post_copy["slug"] = slug
 					search_results.append(post_copy)
 
-	return render_template("search.html", query=query, results=search_results)
+	total_results = len(search_results)
+	search_results, pager = paginate_list(search_results)
+	return render_template(
+		"search.html", query=query, results=search_results, total_results=total_results, pager=pager
+	)
 
 
+def _resolve_template(key):
+	"""Return a known page-template key, falling back to the plain page."""
+	return key if key in PAGE_TEMPLATES else "default"
 
-
-
-
-#  *********************** End Page and Post Serve  ****************************
-#*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#  *********************** Start Page and Post CRUD  ****************************
-#**************************
 
 @app.route("/page/add", methods=["GET", "POST"])
-@login_required
+@capability_required("manage_pages")
 def add_page_route():
 	"""
-	Handles page creation with support for drafts and publishing.
-
-	Features:
-	- Supports both draft and published states
-	- Automatic slug generation
-	- Form validation
-	- User feedback
-	- Database integration
-
-	Methods:
-		GET: Display page creation form
-		POST: Process new page submission
-
-	Form Data:
-		- slug: URL slug (auto-generated if not provided)
-		- title: Page title
-		- description: Meta description
-		- content: Page content
-		- status: 'published' or 'draft'
-
-	Returns:
-		GET: Rendered page creation form
-		POST: Redirect to admin with status message
-
-	Security:
-		- Input validation
-		- Safe slug generation
-		- Database transaction safety
+	Create a page. The page template chosen on the form decides which custom
+	fields are shown and stored (see page_templates.py).
 	"""
+	errors = []
 	if request.method == "POST":
-		slug = request.form.get("slug")
-		slug = slugify(slug)
-		title = request.form.get("title")
-		description = request.form.get("description")
-		content = request.form.get("content")
-		status = request.form.get("status", "draft")
+		template_key = _resolve_template(request.form.get("template") or "default")
+		template = PAGE_TEMPLATES[template_key]
+		title = (request.form.get("title") or "").strip()
+		slug = slugify(request.form.get("slug") or title)
+		description = (request.form.get("description") or "").strip()
+		content = request.form.get("content") or ""
+		status = "published" if request.form.get("status") == "published" else "draft"
 
-		page_data = {
-			"content": content,
-			"title": title,
-			"description": description,
-			"status": status,
-		}
+		if not title:
+			errors.append("A page title is required.")
+		if not slug:
+			errors.append("A permalink (slug) is required.")
+		elif slug in RESERVED_SLUGS or get_section_by_path(slug) or content_store.directory_for_path(slug)[0]:
+			errors.append(f"'{slug}' is reserved. Choose another permalink.")
+		elif get_page_by_slug(slug):
+			errors.append(f"A page already exists at '/{slug}'.")
 
-		if status == "published":
-			success = add_page(slug, page_data)
-		else:
-			success = add_draft_page(slug, page_data)
+		fields = parse_fields(template["fields"], request.form)
+		if request.form.get("action") == "switch_template":
+			return render_template(
+				"page_form.html", mode="add", slug=slug, errors=[],
+				page={"title": title, "description": description, "content": content,
+				      "status": status, "template": template_key},
+				templates=PAGE_TEMPLATES, template_key=template_key,
+				values=fill_defaults(fields, template["fields"]),
+			)
+		if not errors:
+			saved = add_page(slug, {
+				"title": title,
+				"content": content,
+				"description": description,
+				"status": status,
+				"template": template_key,
+				"fields": fields,
+				"author_id": current_user()["id"],
+			})
+			if saved:
+				generate_and_store_sitemap()
+				flash("Page created.", "success")
+				return redirect(url_for("edit_page", slug=slug))
+			errors.append("The page could not be saved. Please try again.")
 
-		if success:
-			generate_and_store_sitemap()
-			flash("Page added successfully!", "success")
-		else:
-			flash("Error adding page!", "error")
+		page = {"title": title, "description": description, "content": content,
+		        "status": status, "template": template_key}
+		return render_template(
+			"page_form.html", mode="add", page=page, slug=slug, errors=errors,
+			templates=PAGE_TEMPLATES, template_key=template_key,
+			values=fill_defaults(fields, template["fields"]),
+		)
 
-		return redirect(url_for("admin"))
+	template_key = _resolve_template(request.args.get("template") or "default")
+	return render_template(
+		"page_form.html", mode="add", page={"title": "", "description": "", "content": "",
+		                                    "status": "draft", "template": template_key},
+		slug="", errors=errors, templates=PAGE_TEMPLATES, template_key=template_key,
+		values=default_values(PAGE_TEMPLATES[template_key]["fields"]),
+	)
 
-	return render_template("add_page.html")
+
 @app.route("/page/edit/<slug>", methods=["GET", "POST"])
-@login_required
+@capability_required("manage_pages")
 def edit_page(slug):
-	"""
-	Handles editing of existing pages.
-	
-	Features:
-	- Full page editing
-	- Status management
-	- Content preview
-	- Version tracking
-	- SEO metadata editing
-	
-	URL Parameters:
-		slug (str): Page identifier to edit
-	
-	Methods:
-		GET: Display edit form with current content
-		POST: Process page updates
-	
-	Form Fields:
-		- title: Page title
-		- description: SEO description
-		- content: Main page content
-		- status: Publication status
-	
-	Processing:
-	1. Load existing page
-	2. Validate input
-	3. Update content
-	4. Update timestamps
-	5. Save changes
-	
-	Returns:
-		GET: Rendered edit form with current content
-		POST: Redirect to admin with status
-		404: If page not found
-	
-	Security:
-		- Validates page existence
-		- Handles concurrent edits
-		- Preserves metadata
-	"""	
+	"""Edit a page's content, permalink, status, template and custom fields."""
 	page = get_page_by_slug(slug)
-
 	if not page:
 		return "<h1>Page not found</h1>", 404
 
+	errors = []
 	if request.method == "POST":
-		title = request.form.get("title")
-		description = request.form.get("description")
-		content = request.form.get("content")
-		status = request.form.get("status", "draft")
+		template_key = _resolve_template(request.form.get("template") or "default")
+		template = PAGE_TEMPLATES[template_key]
+		title = (request.form.get("title") or "").strip()
+		new_slug = slugify(request.form.get("slug") or title) or slug
+		description = (request.form.get("description") or "").strip()
+		content = request.form.get("content") or ""
+		status = "published" if request.form.get("status") == "published" else "draft"
 
-		page_data = {
-			"content": content,
-			"title": title,
-			"description": description,
-			"status": status,
-		}
+		if not title:
+			errors.append("A page title is required.")
+		if new_slug != slug:
+			if new_slug in RESERVED_SLUGS or get_section_by_path(new_slug) or content_store.directory_for_path(new_slug)[0]:
+				errors.append(f"'{new_slug}' is reserved. Choose another permalink.")
+			elif get_page_by_slug(new_slug):
+				errors.append(f"A page already exists at '/{new_slug}'.")
 
-		success = update_page_by_slug(slug, page_data)
+		fields = parse_fields(template["fields"], request.form)
+		if request.form.get("action") == "switch_template":
+			return render_template(
+				"page_form.html", mode="edit", slug=slug, errors=[],
+				page=dict(page, title=title, description=description, content=content,
+				          status=status, template=template_key),
+				templates=PAGE_TEMPLATES, template_key=template_key,
+				values=fill_defaults(fields, template["fields"]),
+			)
+		if not errors:
+			saved = update_page_by_slug(slug, {
+				"title": title,
+				"content": content,
+				"description": description,
+				"status": status,
+				"new_slug": new_slug,
+				"template": template_key,
+				"fields": fields,
+			})
+			if saved:
+				generate_and_store_sitemap()
+				flash("Page saved.", "success")
+				return redirect(url_for("edit_page", slug=new_slug))
+			errors.append("The page could not be saved. Please try again.")
 
-		if success:
-			flash("Page updated successfully!", "success")
-		else:
-			flash("Error updating page!", "error")
+		page = dict(page, title=title, description=description, content=content,
+		            status=status, template=template_key)
+		return render_template(
+			"page_form.html", mode="edit", page=page, slug=slug, errors=errors,
+			templates=PAGE_TEMPLATES, template_key=template_key,
+			values=fill_defaults(fields, template["fields"]),
+		)
 
-		return redirect(url_for("admin"))
+	template_key = _resolve_template(page.get("template"))
+	template = PAGE_TEMPLATES[template_key]
+	return render_template(
+		"page_form.html", mode="edit", page=page, slug=slug, errors=errors,
+		templates=PAGE_TEMPLATES, template_key=template_key,
+		values=fill_defaults(page.get("fields") or {}, template["fields"]),
+	)
 
-	return render_template("edit_page.html", slug=slug, page=page)
+
+@app.route("/page/delete/<slug>", methods=["POST"])
+@capability_required("manage_pages")
+def delete_page_route(slug):
+	"""Delete a page. POST only, so a link or image on another site cannot delete content."""
+	if delete_page(slug):
+		generate_and_store_sitemap()
+		flash("Page deleted.", "success")
+	else:
+		flash("Error deleting page.", "error")
+	return redirect(url_for("admin"))
 
 
 @app.route("/page/preview/<slug>")
-@login_required
+@capability_required("manage_pages")
 def preview_page(slug):
 	"""
 	Provides a preview of a page before publishing.
@@ -2706,12 +2547,18 @@ def preview_page(slug):
 			"content_class": "",
 			"dark_mode": False,
 		}
+		template_key = _resolve_template(page.get("template"))
+		if template_key != DEFAULT_TEMPLATE_KEY:
+			template = PAGE_TEMPLATES[template_key]
+			values = fill_defaults(page.get("fields") or {}, template["fields"])
+			return render_template(template["template_file"], page=page, f=values)
 		return render_template("preview.html", page=page, theme=theme)
 	else:
 		return "<h1>Page not found</h1>", 404
 
 
 @app.route("/page/preview_draft", methods=["POST"])
+@login_required
 def preview_draft():
 	"""
 	Previews a draft post/page before saving.
@@ -2742,333 +2589,178 @@ def preview_draft():
 	return render_template("preview.html", page=page)
 
 
-@app.route("/page/delete/<slug>")
-@login_required
-def delete_page_route(slug):
-	"""
-	Deletes a page by its URL slug.
+def _can_edit_post(post, user):
+	"""Editors may edit any post. Others may edit their own posts, subject to their role."""
+	if can("edit_others_content", user):
+		return True
+	if post.get("author_id") != user["id"] or not can("create_posts", user):
+		return False
+	return post.get("status") != "published" or can("publish_posts", user)
 
-	Features:
-	- Removes page from database
-	- Handles both published and draft pages
-	- Provides user feedback
-	- Maintains data integrity
 
-	Args:
-		slug (str): URL slug of the page to delete
+def _post_status_for(requested: str) -> str:
+	"""Contributors cannot publish; their submissions stay as drafts."""
+	if requested == "published" and can("publish_posts"):
+		return "published"
+	return "draft"
 
-	Returns:
-		302: Redirect to admin dashboard with:
-			- Success message if deletion succeeded
-			- Error message if deletion failed
 
-	Security:
-		- Requires admin login
-		- Database transaction safety
-		- Error isolation
-	"""
-	success = delete_page(slug)
-	if success:
-		flash("Page deleted successfully!", "success")
-	else:
-		flash("Error deleting page!", "error")
-	return redirect(url_for("admin"))
+def _post_extras(category_slug):
+	"""Section fields, cover image and date from the post form: (meta, cover_image, published_at)."""
+	section = get_section_by_slug(category_slug)
+	meta = parse_fields(section["fields_schema"], request.form) if section else {}
+	cover = parse_fields([{"name": "cover", "type": "image"}], {"field[cover]": request.form.get("cover_image", "")}).get("cover", "")
+	published_at = content_store.parse_post_date(request.form.get("pdatetime") or request.form.get("pdate") or "")
+	return meta, cover, published_at
+
+
 @app.route("/post/add", methods=["GET", "POST"])
-@login_required
+@capability_required("create_posts")
 def add_post_route():
-	"""
-	Handles creation of new blog posts.
-	
-	Features:
-	- Supports both draft and published states
-	- Auto-generates URL slugs
-	- Handles categories and tags
-	- Input validation
-	- Error handling
-	- Duplicate slug prevention
-	
-	Methods:
-		GET: Display post creation form
-		POST: Process new post submission
-	
-	Form Data:
-		slug: URL slug (auto-generated if empty)
-		title: Post title
-		description: Post description/excerpt
-		content: Main post content
-		category: Category slug
-		tags: Comma-separated tag list
-		status: Published/draft status
-	
-	Returns:
-		GET: Rendered post creation form
-		POST: 
-			- Redirect to admin on success
-			- Form with errors on failure
-			
-	Security:
-		- Requires admin login
-		- Validates input
-		- Sanitizes slugs
-		- Prevents duplicate slugs
-	"""
+	"""Create a post. Contributors' posts are saved as drafts regardless of the status chosen."""
+	errors = []
+	form = {"slug": "", "title": "", "description": "", "content": "",
+	        "category": "", "tags": "", "status": "draft", "cover_image": "",
+	        "pdate": "", "pdatetime": ""}
+	meta_values = {}
+	if request.method == "GET":
+		wanted = get_section_by_path(request.args.get("section", "")) or get_section_by_slug(request.args.get("category", ""))
+		if wanted:
+			form["category"] = wanted["slug"]
+	if request.method == "POST":
+		form = {key: (request.form.get(key) or "") for key in form}
+		title = form["title"].strip()
+		content = form["content"].strip()
+		slug = slugify(form["slug"].strip() or title)
+		if not title or not content:
+			errors.append("Title and content are required.")
+		if not slug:
+			errors.append("A permalink (slug) is required.")
+		elif get_post_by_slug(slug):
+			errors.append(f"A post with slug '{slug}' already exists.")
 
-	try:
-		if request.method == "POST":
-			slug = request.form.get("slug", "").strip()
-			slug = slugify(slug)
-			title = request.form.get("title", "").strip()
-			description = request.form.get("description", "").strip()
-			content = request.form.get("content", "").strip()
-			category = request.form.get("category", "").strip()
-			tag_list = request.form.get("tags", "").strip()
-			status = request.form.get("status", "draft").strip()
-
-			if not slug or not title or not content:
-				raise ValueError("Slug, title and content are required")
-
-			# Check if post already exists
-			existing_post = get_post_by_slug(slug)
-			if existing_post:
-				raise ValueError(f"A post with slug '{slug}' already exists")
-
-			post_tags = [tag.strip() for tag in tag_list.split(",") if tag.strip()]
-
-			post_data = {
+		meta_values, cover_image, published_at = _post_extras(form["category"].strip())
+		if not errors:
+			tags = [t.strip() for t in form["tags"].split(",") if t.strip()]
+			status = _post_status_for(form["status"])
+			saved = add_post(slug, {
 				"content": content,
 				"title": title,
-				"excerpt": description
-				or title[:200],  # Use first 200 chars if no description
+				"excerpt": form["description"].strip() or title[:200],
 				"status": status,
-				"category": category,
-				"tags": post_tags,
-			}
-
-			if status == "published":
-				success = add_post(slug, post_data)
-				
-			else:
-				success = add_draft_post(slug, post_data)
-				
-			generate_and_store_sitemap()
-
-			if success:
+				"category": form["category"].strip(),
+				"tags": tags,
+				"author_id": current_user()["id"],
+				"cover_image": cover_image,
+				"meta": meta_values,
+				"published_at": published_at,
+			})
+			if saved:
 				update_tag_counts()
-				flash("Post added successfully!", "success")
+				generate_and_store_sitemap()
+				section = get_section_by_slug(form["category"].strip())
+				noun = (section["singular_name"] if section else "Post")
+				flash(f"{noun} created." + ("" if status == "published" else " It was saved as a draft."), "success")
 				return redirect(url_for("admin"))
-			else:
-				raise ValueError("Failed to save post")
+			errors.append("The post could not be saved. Please try again.")
 
-		categories = get_categories()
-		if not categories:
-			categories = {}
-		return render_template("add_post.html", categories=categories, error=None)
-
-	except Exception as e:
-		return render_template(
-			"add_post.html",
-			categories=get_categories(),
-			error=str(e),
-			form_data={
-				"slug": request.form.get("slug", ""),
-				"title": request.form.get("title", ""),
-				"description": request.form.get("description", ""),
-				"content": request.form.get("content", ""),
-				"category": request.form.get("category", ""),
-				"tags": request.form.get("tags", ""),
-				"status": request.form.get("status", "draft"),
-			},
-		)
+	return render_template(
+		"post_form.html", mode="add", post=None, slug="", form=form, errors=errors,
+		categories=get_categories() or {}, can_publish=can("publish_posts"),
+		meta_values=meta_values,
+	)
 
 
 @app.route("/post/edit/<slug>", methods=["GET", "POST"])
 @login_required
 def edit_post(slug):
-	"""
-	Handles editing of existing blog posts.
-	
-	Features:
-	- Full post editing
-	- Category management
-	- Tag management
-	- Status updates
-	- Metadata editing
-	
-	URL Parameters:
-		slug (str): Post identifier to edit
-		
-	Methods:
-		GET: Display edit form with current content
-		POST: Process post updates
-		
-	Form Fields:
-		- title: Post title
-		- description: Post excerpt
-		- content: Main post content
-		- category: Category selection
-		- tags: Comma-separated tag list
-		- status: Publication status
-		
-	Returns:
-		GET: Rendered edit form with current content
-		POST: Redirect to admin with status
-		404: If post not found
-		
-	Security:
-		- Requires admin login
-		- Validates post existence
-		- Safe tag/category handling
-	"""
-
+	"""Edit a post, enforcing ownership and status rules for the current role."""
 	post = get_post_by_slug(slug)
-
 	if not post:
 		return "<h1>Post not found</h1>", 404
+	me = current_user()
+	if not _can_edit_post(post, me):
+		abort(403)
 
+	errors = []
 	if request.method == "POST":
-		title = request.form.get("title")
-		description = request.form.get("description")
-		content = request.form.get("content")
-		category = request.form.get("category")
-		print("category from edit post", category)
-		tag_list = request.form.get("tags", "")
-		status = request.form.get("status", "draft")
+		title = (request.form.get("title") or "").strip()
+		content = request.form.get("content") or ""
+		if not title or not content.strip():
+			errors.append("Title and content are required.")
+		if not errors:
+			tags = [t.strip() for t in (request.form.get("tags") or "").split(",") if t.strip()]
+			meta_values, cover_image, published_at = _post_extras((request.form.get("category") or "").strip())
+			success = update_post_by_slug(slug, {
+				"content": content,
+				"title": title,
+				"excerpt": (request.form.get("description") or "").strip(),
+				"status": _post_status_for(request.form.get("status", "draft")),
+				"category": request.form.get("category") or "",
+				"tags": tags,
+				"cover_image": cover_image,
+				"meta": meta_values,
+				"published_at": published_at,
+			})
+			if success:
+				update_tag_counts()
+				generate_and_store_sitemap()
+				flash("Post saved.", "success")
+				return redirect(url_for("edit_post", slug=slug))
+			errors.append("The post could not be saved. Please try again.")
+		post = dict(post, title=title, content=content,
+		            excerpt=request.form.get("description") or "",
+		            category=request.form.get("category") or "")
 
-		post_tags = [tag.strip() for tag in tag_list.split(",") if tag.strip()]
-
-		post_data = {
-			"content": content,
-			"title": title,
-			"excerpt": description,
-			"status": status,
-			"category": category,
-			"tags": post_tags,
-		}
-
-		success = update_post_by_slug(slug, post_data)
-
-		if success:
-			update_tag_counts()
-			flash("Post updated successfully!", "success")
-		else:
-			flash("Error updating post!", "error")
-
-		return redirect(url_for("admin"))
-
-	# Format tags for display
-	if "tags" in post and isinstance(post["tags"], list):
-		post["tags_string"] = ", ".join(post["tags"])
-	else:
-		post["tags_string"] = ""
-
+	post["tags_string"] = ", ".join(post.get("tags") or []) if isinstance(post.get("tags"), list) else ""
 	return render_template(
-		"edit_post.html", slug=slug, post=post, categories=get_categories()
+		"post_form.html", mode="edit", post=post, slug=slug, form=None, errors=errors,
+		categories=get_categories() or {}, can_publish=can("publish_posts"),
+		meta_values=post.get("meta") or {},
 	)
 
 
-@app.route("/post/delete/<slug>")
+@app.route("/post/delete/<slug>", methods=["POST"])
 @login_required
 def delete_post_route(slug):
-	"""
-	Handles deletion of blog posts.
-	
-	Features:
-	- Removes post content
-	- Updates tag counts
-	- Cleans up relationships
-	- User feedback
-	- Error handling
-	
-	Args:
-		slug (str): URL slug of post to delete
-		
-	Process:
-	1. Delete post content
-	2. Update tag relationships
-	3. Recalculate tag counts
-	4. Provide user feedback
-	
-	Returns:
-		302: Redirect to admin with:
-			- Success message if deleted
-			- Error message if failed
-			
-	Notes:
-		- Also handles draft posts
-		- Maintains tag count accuracy
-	"""
-
-	success = delete_post_by_slug(slug)
-	if success:
+	"""Delete a post (POST only). Contributors and authors can delete only their own posts."""
+	post = get_post_by_slug(slug)
+	if not post:
+		flash("Post not found.", "error")
+		return redirect(url_for("admin"))
+	me = current_user()
+	if not can("edit_others_content") and post.get("author_id") != me["id"]:
+		abort(403)
+	if delete_post_by_slug(slug):
 		update_tag_counts()
 		generate_and_store_sitemap()
-		flash("Post deleted successfully!", "success")
+		flash("Post deleted.", "success")
 	else:
-		flash("Error deleting post!", "error")
-
+		flash("Error deleting post.", "error")
 	return redirect(url_for("admin"))
+
 
 @app.route("/<slug>")
 def view_page(slug):
 	"""
-	Catch-all route that serves individual pages.
-	
-	Features:
-	- Handles all non-specific routes
-	- Serves published pages only
-	- Theme integration
-	- 404 handling
-	
-	Args:
-		slug (str): URL slug of the page to display
-		
-	Processing:
-	1. Retrieve page by slug
-	2. Verify published status
-	3. Apply theme template
-	4. Handle missing pages
-	
-	Returns:
-		str: Rendered page content with theme
-		404: If page not found or not published
-		
-	Notes:
-		- Only serves published pages
-		- Must be the last route defined
-		- Used for static pages
-	"""	
+	Public page. The page's template decides the layout: plain pages use the theme's
+	master template; templates with custom fields receive them as ``f``.
+	"""
+	if get_section_by_path(slug):
+		return section_index_view(slug)
 	page = get_page_by_slug(slug)
-	if page and page.get("status") == "published":
-		return render_template("main/master.html", page=page)
-	else:
+	if not page or page.get("status") != "published":
 		abort(404)
-
-
-
-#  *********************** End Page and Post CRUD  ****************************
-#**************************
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#  *********************** Start Media Upload  ****************************
-#**************************
+	template_key = _resolve_template(page.get("template"))
+	template = PAGE_TEMPLATES[template_key]
+	if template_key == DEFAULT_TEMPLATE_KEY:
+		return render_template("main/master.html", page=page)
+	values = fill_defaults(page.get("fields") or {}, template["fields"])
+	return render_template(template["template_file"], page=page, f=values)
 
 
 @app.route("/upload_image", methods=["POST"])
-@login_required
+@capability_required("upload_media")
 def upload_image():
 	"""
 	Handles image upload for the media library.
@@ -3090,7 +2782,6 @@ def upload_image():
 	"""
 
 	try:
-		# Check CSRF token from either header or form
 		token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
 		if not token or token != session.get("csrf_token"):
 			return jsonify({"error": "Invalid CSRF token"}), 403
@@ -3107,23 +2798,18 @@ def upload_image():
 			filename = str(uuid.uuid4()) + os.path.splitext(original_filename)[1]
 			file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
-			# Ensure upload directory exists
 			os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-			# Save the file
 			file.save(file_path)
 
 			try:
-				# Create thumbnails
 				thumbnails = create_image_thumbnails(file_path, filename)
 
-				# Get image dimensions
 				with Image.open(file_path) as img:
 					width, height = img.size
 
 				file_size = os.path.getsize(file_path)
 
-				# Prepare media data
 				media_data = {
 					"filename": filename,
 					"original_filename": original_filename,
@@ -3138,7 +2824,6 @@ def upload_image():
 					"thumbnail": thumbnails.get("thumbnail"),
 				}
 
-				# Add to media library
 				result = db_manager.add_media(media_data)
 				if result:
 					return jsonify(
@@ -3148,7 +2833,6 @@ def upload_image():
 				return jsonify({"error": "Failed to save to database"}), 500
 
 			except Exception as e:
-				# Clean up the file if there was an error
 				try:
 					os.remove(file_path)
 				except:
@@ -3158,26 +2842,11 @@ def upload_image():
 		return jsonify({"error": "Invalid file type"}), 400
 
 	except Exception as e:
-		print(f"Upload error: {str(e)}")  # Add error logging
+		print(f"Upload error: {str(e)}")
 		return jsonify({"error": str(e)}), 500
 
 
-
-
-
-#@app.route("/uploads/<path:filename>")
-#@login_required
-#def uploaded_file(filename):
-#    """Serve uploaded files with proper mime type"""
-#    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
-
-
-
-
-
-
 @app.route("/uploads/<path:filename>")
-#@login_required
 def uploaded_file(filename):
 	"""
 	Serves uploaded media files securely.
@@ -3209,7 +2878,6 @@ def uploaded_file(filename):
 	upload_folder = os.path.abspath(app.config["UPLOAD_FOLDER"])
 	requested_path = os.path.abspath(os.path.join(upload_folder, filename))
 
-	# Ensure the requested path is inside the upload folder
 	if not requested_path.startswith(upload_folder + os.sep):
 		abort(403, "Forbidden: Path traversal detected.")
 
@@ -3219,18 +2887,6 @@ def uploaded_file(filename):
 	return send_file(requested_path)
 
 
-
-#  *********************** End Media Upload  ****************************
-#*
-
-
-
-
-
-
-
-# ************************** Start Stitemap ************************
-
 @app.route('/sitemap.xml')
 def sitemap():
 	"""
@@ -3239,7 +2895,6 @@ def sitemap():
 	sitemap_xml = db_manager.get_sitemap_content()
 	
 	if not sitemap_xml:
-		# Sitemap has not been generated yet, create it now.
 		print("generating sitemap")
 		sitemap_task=generate_and_store_sitemap()
 		if not sitemap_task:
@@ -3249,30 +2904,109 @@ def sitemap():
 	response = make_response(sitemap_xml)
 	response.headers["Content-Type"] = "application/xml"
 	return response
-#*******************************End sitemap route********************'
 
 
+app.config["REGENERATE_SITEMAP"] = generate_and_store_sitemap
+app.register_blueprint(content_blueprint)
 
 
+def _read_setting(key, default=None):
+	return get_site_settings().get(key, default)
 
 
+def _write_setting(key, value):
+	update_site_settings({key: value})
 
 
+def _extensions_changed():
+	content_store.set_extension_presets(extensions.section_presets())
+	if THEME_NAME not in available_themes():
+		update_site_settings({"theme": "default"})
+		apply_theme("default")
+	else:
+		apply_theme(THEME_NAME)
+	app.jinja_env.cache.clear()
 
 
+def _switch_theme(name):
+	if apply_theme(name):
+		update_site_settings({"theme": name})
+		return True
+	return False
 
 
+extensions.read_setting = _read_setting
+extensions.write_setting = _write_setting
+extensions.on_changed = _extensions_changed
+extensions.apply_directories = content_store.set_directories
+extensions.switch_theme = _switch_theme
+extensions.jinja_env = app.jinja_env
+_ext_state = {"seen": None}
 
 
+def _ext_sync_needed():
+	"""Cheap check: has the saved list of active extensions changed (e.g. in another worker)?"""
+	return _ext_state["seen"] is None or time.time() - _ext_state.get("at", 0) > 2
+
+
+def _ext_sync():
+	_ext_state["at"] = time.time()
+	try:
+		changed = extensions.sync()
+	except Exception as e:
+		print(f"[extensions] sync failed: {e}")
+		return
+	_ext_state["seen"] = True
+
+
+def _ext_dispatch():
+	if request.path.startswith(("/static/", "/uploads/")):
+		return None
+	match = extensions.dispatch(request.path, request.method)
+	if not match:
+		return None
+	view, kwargs = match
+	return app.make_response(view(**kwargs))
+
+
+@app.before_request
+def _extensions_before():
+	if request.path.startswith("/static/"):
+		return None
+	if _ext_sync_needed():
+		_ext_sync()
+	return None
+
+
+@app.route("/ext/<slug>/static/<path:filename>")
+def extension_static(slug, filename):
+	folder = extensions.static_dir(slug)
+	if not folder:
+		abort(404)
+	return send_from_directory(folder, filename)
+
+
+import extension_views
+import theme_views
+import package_views
+import migrate_views
+extension_views.init(app, extensions)
+theme_views.init(app, lambda: THEME_NAME, _switch_theme)
+package_views.init(app, extensions, lambda: THEME_NAME, import_content)
+app.request_class = migrate_views.MigrationRequest
+migrate_views.init(app, RESERVED_SLUGS)
+
+_ext_state["booting"] = True
+_ext_sync()
+_ext_state["booting"] = False
+
+app.before_request(_ext_dispatch)
 
 
 if __name__ == "__main__":
-	# Get port from environment variable or default to 5000
 	port = int(os.environ.get("PORT", 5000))
 
-	# Enable debug mode in development
 	debug = os.environ.get("FLASK_ENV", "development") == "development"
 
-	# Run the application
 	app.run(port=port, debug=debug)
 	print(f"Server is running on http://127.0.0.1:{port}")

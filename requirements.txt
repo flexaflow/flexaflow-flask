@@ -10,7 +10,6 @@ MarkupSafe==3.0.2
 packaging==25.0
 pillow==11.3.0
 pyotp==2.9.0
-PyQRCode==1.2.1
 python-dotenv==1.1.0
 SQLAlchemy==2.0.43
 typing_extensions==4.15.0

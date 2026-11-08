@@ -5,14 +5,16 @@
     <title>Manage Tags and Categories</title>
     <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
     <link href="/static/bootstrap-and-related/bootstrap.min.css" rel="stylesheet">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="/static/admin/admin.js"></script>
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <a class="navbar-brand" href="/admin">Admin Dashboard</a>
             <div>
-                <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
-                <a href="/admin/menu" class="btn btn-outline-light mr-2">Menu Editor</a>
+                <a href="/admin/settings" class="btn btn-outline-light me-2">Site Settings</a>
+                <a href="/admin/menu" class="btn btn-outline-light me-2">Menu Editor</a>
                 <a href="/" class="btn btn-outline-light">View Site</a>
             </div>
         </div>
@@ -22,8 +24,9 @@
         <div class="row">
             <div class="col-md-6 mb-4">
                 <h4>Add Category</h4>
-                <form method="post" action="/admin/category/add" class="form-inline mb-3">
-                    <input type="text" name="name" class="form-control mr-2 mb-2" placeholder="Category Name (unique)" required>
+                <form method="post" action="/admin/category/add" class="d-flex flex-wrap align-items-center mb-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="text" name="name" class="form-control me-2 mb-2" placeholder="Category Name (unique)" required>
                     <button type="submit" class="btn btn-primary mb-2">Add Category</button>
                 </form>
                 <h5>All Categories</h5>
@@ -33,6 +36,7 @@
                         <span><strong>{{ cat.name }}</strong> ({{ cat.post_count or 0 }})</span>
                         {% if slug in unused_categories %}
                         <form method="post" action="/admin/category/delete/{{ slug }}" style="display:inline;">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused category?')">Delete</button>
                         </form>
                         {% endif %}
@@ -42,8 +46,9 @@
             </div>
             <div class="col-md-6 mb-4">
                 <h4>Add Tag</h4>
-                <form method="post" action="/admin/tag/add" class="form-inline mb-3">
-                    <input type="text" name="name" class="form-control mr-2 mb-2" placeholder="Tag Name" required>
+                <form method="post" action="/admin/tag/add" class="d-flex flex-wrap align-items-center mb-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="text" name="name" class="form-control me-2 mb-2" placeholder="Tag Name" required>
                     <button type="submit" class="btn btn-primary mb-2">Add Tag</button>
                 </form>
                 <h5>All Tags</h5>
@@ -53,6 +58,7 @@
                         <span><strong>{{ tag_obj.name or tag }}</strong> ({{ tag_obj.count or 0 }})</span>
                         {% if tag in unused_tags %}
                         <form method="post" action="/admin/tag/delete/{{ tag_obj.id }}" style="display:inline;">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused tag?')">Delete</button>
                         </form>
                         {% endif %}
@@ -63,7 +69,6 @@
         </div>
     </div>
     <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-    <script src="/static/bootstrap-and-related/popper.min.js"></script>
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
+    <script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -1,0 +1,128 @@
+{% extends "_admin_layout.html" %}
+{% block title %}{{ 'Your profile' if mode == 'profile' else ('Add user' if mode == 'create' else 'Edit user') }}{% endblock %}
+{% block content %}
+{% set is_profile = mode == 'profile' %}
+{% set is_create = mode == 'create' %}
+<div class="row">
+	<div class="col-lg-8">
+		<h1 class="h4 mb-3">{{ 'Your profile' if is_profile else ('Add user' if is_create else 'Edit user: ' ~ user.username) }}</h1>
+
+		{% if errors %}
+		<div class="alert alert-danger"><ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+		{% endif %}
+
+		<form method="post" autocomplete="off">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+			<div class="card mb-4">
+				<div class="card-header bg-white"><strong>Account</strong></div>
+				<div class="card-body">
+					<div class="row g-2">
+						<div class="mb-3 col-md-6">
+							<label for="username">Username</label>
+							{% if is_create %}
+							<input type="text" id="username" name="username" class="form-control" value="{{ form.username }}" required pattern="[A-Za-z0-9_.\-]{3,64}" maxlength="64">
+							<small class="form-text text-muted">Letters, digits, dot, underscore, hyphen.</small>
+							{% else %}
+							<input type="text" id="username" class="form-control" value="{{ user.username }}" disabled>
+							{% endif %}
+						</div>
+						<div class="mb-3 col-md-6">
+							<label for="email">Email</label>
+							<input type="email" id="email" name="email" class="form-control" value="{{ (form.email if form else user.email) or '' }}" required maxlength="190">
+						</div>
+					</div>
+					<div class="mb-3">
+						<label for="display_name">Display name</label>
+						<input type="text" id="display_name" name="display_name" class="form-control" value="{{ (form.display_name if form else user.display_name if user.display_name != user.username else '') or '' }}" maxlength="150" placeholder="Shown on posts and the site">
+					</div>
+
+					{% if not is_profile %}
+					<div class="row g-2">
+						<div class="mb-3 col-md-6">
+							<label for="role">Role</label>
+							<select id="role" name="role" class="form-select" {{ 'disabled' if is_self }}>
+								{% for key in roles %}
+								<option value="{{ key }}" {{ 'selected' if (form.role if form else user.role) == key }}>{{ role_labels[key] }}</option>
+								{% endfor %}
+							</select>
+							{% if is_self %}<small class="form-text text-muted">You cannot change your own role here.</small>{% endif %}
+							{% if form and form.role %}<small class="form-text text-muted">{{ role_descriptions[form.role] }}</small>{% endif %}
+						</div>
+						<div class="mb-3 col-md-6 pt-md-4">
+							<div class="form-check form-switch">
+								<input type="checkbox" class="form-check-input" id="is_active" name="is_active" {{ 'checked' if (form.is_active if form else user.is_active) }} {{ 'disabled' if is_self }}>
+								<label class="form-check-label" for="is_active">Account active</label>
+							</div>
+							{% if is_self %}<small class="form-text text-muted">You cannot deactivate your own account.</small>{% endif %}
+						</div>
+					</div>
+					{% endif %}
+				</div>
+			</div>
+
+			<div class="card mb-4">
+				<div class="card-header bg-white"><strong>{{ 'Set password' if is_create else 'Change password' }}</strong></div>
+				<div class="card-body">
+					{% if is_profile %}
+					<div class="mb-3">
+						<label for="current_password">Current password</label>
+						<input type="password" id="current_password" name="current_password" class="form-control" autocomplete="current-password">
+						<small class="form-text text-muted">Required only when changing your password.</small>
+					</div>
+					{% endif %}
+					<div class="row g-2">
+						<div class="mb-3 col-md-6">
+							<label for="new_password">{{ 'Password' if is_create else 'New password' }}</label>
+							<input type="password" id="new_password" name="{{ 'password' if is_create else 'new_password' }}" class="form-control" autocomplete="new-password" minlength="10" {{ 'required' if is_create }}>
+						</div>
+						<div class="mb-3 col-md-6">
+							<label for="confirm_password">Confirm password</label>
+							<input type="password" id="confirm_password" name="confirm_password" class="form-control" autocomplete="new-password" minlength="10" {{ 'required' if is_create }}>
+						</div>
+					</div>
+					<small class="form-text text-muted">At least 10 characters. Leave blank to keep the current password.</small>
+					{% if is_create %}<small class="form-text text-muted d-block">Make sure you give the new user their password through a secure channel.</small>{% endif %}
+				</div>
+			</div>
+
+			<div class="d-flex justify-content-between">
+				<a href="{{ url_for('users_index') if not is_profile else url_for('admin') }}" class="btn btn-outline-secondary">Cancel</a>
+				<button type="submit" class="btn btn-primary">{{ 'Create user' if is_create else 'Save changes' }}</button>
+			</div>
+		</form>
+	</div>
+
+	{% if is_profile %}
+	<div class="col-lg-4">
+		<div class="card mb-4">
+			<div class="card-header bg-white"><strong>Two-factor authentication</strong></div>
+			<div class="card-body">
+				{% if user.two_fa_enabled %}
+				<p><span class="badge text-bg-success">Enabled</span> Your login asks for an authenticator code.</p>
+				<form method="post">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+					<input type="hidden" name="action" value="disable_2fa">
+					<div class="mb-3">
+						<label for="current_password_2fa" class="small">Current password to disable</label>
+						<input type="password" id="current_password_2fa" name="current_password" class="form-control form-control-sm" required>
+					</div>
+					<button type="submit" class="btn btn-sm btn-outline-danger">Disable 2FA</button>
+				</form>
+				<a href="{{ url_for('enable_2fa') }}" class="btn btn-sm btn-link px-0 mt-2" onclick="return confirm('Replace your authenticator? You will need to scan a new QR code.')">Replace authenticator</a>
+				{% else %}
+				<p><span class="badge text-bg-secondary">Disabled</span> Add an authenticator app for a second login step.</p>
+				<a href="{{ url_for('enable_2fa') }}" class="btn btn-sm btn-success">Enable 2FA</a>
+				{% endif %}
+			</div>
+		</div>
+		<div class="card">
+			<div class="card-body small text-muted">
+				Role: <strong>{{ role_labels[user.role] }}</strong><br>
+				Username: <code>{{ user.username }}</code>
+			</div>
+		</div>
+	</div>
+	{% endif %}
+</div>
+{% endblock %}

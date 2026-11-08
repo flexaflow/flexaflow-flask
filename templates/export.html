@@ -1,0 +1,26 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Export{% endblock %}
+{% block content %}
+<h1 class="h3">Export</h1>
+<p class="text-muted">Download a backup or a copy of this site as one .zip. Choose what goes into it. Users and passwords are never exported. Moving to WordPress or Blogger? Use <a href="/admin/migrate">WordPress &amp; Blogger</a>.</p>
+<form method="post" class="card card-body" style="max-width:760px">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="c1" name="content" value="1" checked><label class="form-check-label" for="c1"><strong>Content</strong> – pages, posts, sections and categories, tags</label></div>
+	<div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="c2" name="settings" value="1" checked><label class="form-check-label" for="c2"><strong>Site settings</strong> – title, menu, footer …</label></div>
+	<div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="c3" name="extension_data" value="1" checked><label class="form-check-label" for="c3"><strong>Extension data</strong> – records and settings that extensions keep (for example faculty and staff profiles)</label></div>
+	<div class="form-check mb-3"><input type="checkbox" class="form-check-input" id="c4" name="media" value="1"><label class="form-check-label" for="c4"><strong>Media files</strong> – everything in the uploads folder (can be large)</label></div>
+	<hr>
+	<p class="mb-1"><strong>Installed extensions and themes</strong> <small class="text-muted">(to move the whole site to a new server)</small></p>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="c5" name="packages_extensions" value="1"><label class="form-check-label" for="c5">Include extensions</label></div>
+	<div class="ps-4 mb-2">
+		{% for e in extensions %}<div class="form-check"><input class="form-check-input" type="checkbox" name="ext" value="{{ e.slug }}" id="e_{{ e.slug }}" checked><label class="form-check-label" for="e_{{ e.slug }}">{{ e.name }} <small class="text-muted">v{{ e.version }}{% if e.slug in active %} · active{% endif %}</small></label></div>
+		{% else %}<small class="text-muted">None installed.</small>{% endfor %}
+	</div>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="c6" name="packages_themes" value="1"><label class="form-check-label" for="c6">Include themes</label></div>
+	<div class="ps-4 mb-3">
+		{% for t in themes %}<div class="form-check"><input class="form-check-input" type="checkbox" name="theme" value="{{ t.slug }}" id="t_{{ t.slug }}" checked><label class="form-check-label" for="t_{{ t.slug }}">{{ t.name }} <small class="text-muted">{% if t.version %}v{{ t.version }}{% endif %}</small></label></div>
+		{% else %}<small class="text-muted">No uploaded themes (the built-in default theme is always available).</small>{% endfor %}
+	</div>
+	<div><button class="btn btn-primary">Download export</button> <a class="btn btn-link" href="/admin/export/xml">Old XML format (posts and pages only)</a></div>
+</form>
+{% endblock %}

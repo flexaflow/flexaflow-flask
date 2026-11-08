@@ -1,0 +1,427 @@
+{% extends "_admin_layout.html" %}
+{% block title %}{{ cfg.label }}{% endblock %}
+
+{% block head %}
+<style>
+	.person-card { background:#fff; border:1px solid #dee2e6; border-radius:.4rem; margin-bottom:.8rem; }
+	.person-card > summary { list-style:none; cursor:pointer; padding:.75rem 1rem; display:flex; align-items:center; gap:.75rem; }
+	.person-card > summary::-webkit-details-marker { display:none; }
+	.person-card .thumb { width:44px; height:44px; border-radius:50%; object-fit:cover; background:#e9ecef; flex:0 0 44px; }
+	.person-card .summary-text { flex:1; min-width:0; }
+	.person-card .summary-name { font-weight:600; }
+	.person-card .summary-title { font-size:.8rem; color:#6c757d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+	.person-card .chev { color:#6c757d; transition:transform .15s; }
+	.person-card[open] .chev { transform:rotate(90deg); }
+	.person-card .card-body-inner { padding:.25rem 1rem 1rem; border-top:1px solid #e9ecef; }
+	.person-card fieldset { border:0; border-top:1px dashed #dee2e6; margin-top:.9rem; padding-top:.8rem; }
+	.person-card legend { font-size:.85rem; font-weight:600; width:auto; padding:0; margin:0 0 .4rem; }
+	.person-card label { font-size:.75rem; color:#6c757d; margin-bottom:2px; display:block; }
+	.person-card .grid2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem .9rem; margin-top:.9rem; }
+	.person-card .grid2 .span2 { grid-column:1/-1; }
+	.person-card .rowline { display:flex; gap:.5rem; align-items:flex-start; margin-bottom:.5rem; }
+	.person-card .rowline > .grow { flex:1; min-width:0; }
+	.person-card .cols { display:grid; gap:.5rem; flex:1; min-width:0; }
+	.person-card .cols.c2 { grid-template-columns:1fr 1fr; }
+	.person-card .cols.c3 { grid-template-columns:1.6fr .7fr 1.6fr; }
+	.person-card .pubrow { border:1px solid #eef0f2; border-radius:.3rem; padding:.5rem; background:#fbfbfc; }
+	.person-card .card-actions { display:flex; gap:.5rem; align-items:center; justify-content:space-between; flex-wrap:wrap; border-top:1px solid #e9ecef; margin-top:1rem; padding-top:.9rem; }
+	.person-card .dirty-note { font-size:.8rem; color:#b45309; }
+	.person-card .photo-prev { max-width:90px; max-height:90px; border-radius:.3rem; margin-top:.4rem; }
+	#peopleStatus { min-height:1.4rem; font-size:.85rem; }
+	@media (max-width:640px) { .person-card .grid2, .person-card .cols.c2, .person-card .cols.c3 { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+	<div>
+		<h1 class="h4 mb-1">{{ cfg.label }}</h1>
+		<p class="text-muted mb-0 small">Public page: <a href="{{ cfg.base_path }}" target="_blank" rel="noopener"><code>{{ cfg.base_path }}</code></a>. Each card is saved on its own with its <strong>Save</strong> button.</p>
+	</div>
+	<div class="mt-2">
+		<button class="btn btn-primary" type="button" id="addBtn">+ Add {{ cfg.singular }}</button>
+		<a class="btn btn-outline-secondary" href="{{ url_for('content.people_export', kind=kind) }}">Download JSON</a>
+		<button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#importBox">Import JSON</button>
+		<button class="btn btn-link btn-sm" type="button" id="expandAll">Expand all</button>
+		<button class="btn btn-link btn-sm" type="button" id="collapseAll">Collapse all</button>
+	</div>
+</div>
+
+<div class="collapse mb-3" id="importBox">
+	<div class="card card-body">
+		<form method="post" action="{{ url_for('content.people_import', kind=kind) }}" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<input type="file" name="file" accept="application/json,.json" class="form-control me-3" required>
+			<div class="form-check me-3">
+				<input type="checkbox" class="form-check-input" id="replaceAll" name="replace" value="1">
+				<label class="form-check-label" for="replaceAll">Replace everything (otherwise records with the same slug are updated and new ones added)</label>
+			</div>
+			<button class="btn btn-primary btn-sm" type="submit">Import</button>
+		</form>
+		<small class="text-muted mt-2">Accepts the same <code>faculty.json</code> format as the old site.</small>
+	</div>
+</div>
+
+<div class="row g-2 mb-3">
+	<div class="col-md-6 mb-2"><input type="search" class="form-control" id="peopleSearch" placeholder="Search by name, title or email…" aria-label="Search"></div>
+	<div class="col-md-3 mb-2"><select class="form-select" id="peopleGroup" aria-label="Filter by group"><option value="">All groups</option></select></div>
+	<div class="col-md-3 mb-2"><select class="form-select" id="peopleVis" aria-label="Filter by visibility"><option value="">Published &amp; draft</option><option value="published">Published only</option><option value="draft">Drafts only</option></select></div>
+</div>
+<div id="peopleStatus" class="text-muted" role="status" aria-live="polite"></div>
+<div id="peopleList"></div>
+<div class="text-center text-muted border rounded py-5 bg-white" id="emptyState" hidden>No {{ cfg.label|lower }} yet. Use “Add {{ cfg.singular }}” to begin.</div>
+{% endblock %}
+
+{% block scripts %}
+{% include "_media_picker.html" %}
+<script id="peopleData" type="application/json">{{ {'records': records, 'blank': blank, 'groups': cfg.groups, 'sections': cfg.sections, 'kind': kind, 'basePath': cfg.base_path, 'singular': cfg.singular}|tojson }}</script>
+<script>
+(function () {
+	var DATA = JSON.parse(document.getElementById('peopleData').textContent);
+	var listEl = document.getElementById('peopleList');
+	var emptyEl = document.getElementById('emptyState');
+	var statusEl = document.getElementById('peopleStatus');
+	var has = function (s) { return DATA.sections.indexOf(s) !== -1; };
+	var dirtyCount = 0;
+
+	function setStatus(msg, bad) {
+		statusEl.textContent = msg || '';
+		statusEl.className = bad ? 'text-danger' : 'text-muted';
+		if (msg && !bad) { setTimeout(function () { if (statusEl.textContent === msg) { statusEl.textContent = ''; } }, 4000); }
+	}
+	function el(tag, attrs, kids) {
+		var n = document.createElement(tag);
+		Object.keys(attrs || {}).forEach(function (k) {
+			if (k === 'text') { n.textContent = attrs[k]; } else { n.setAttribute(k, attrs[k]); }
+		});
+		(kids || []).forEach(function (c) { if (c) { n.appendChild(c); } });
+		return n;
+	}
+	function labelled(text, input, extra) {
+		var w = el('div', extra || {});
+		w.appendChild(el('label', {text: text}));
+		w.appendChild(input);
+		return w;
+	}
+	function input(cls, value, ph, type) {
+		var i = el('input', {type: type || 'text', 'class': 'form-control form-control-sm ' + cls});
+		if (ph) { i.placeholder = ph; }
+		i.value = value || '';
+		return i;
+	}
+	function rmBtn(fn) {
+		var b = el('button', {type: 'button', 'class': 'btn btn-sm btn-outline-danger', text: '✕', title: 'Remove', 'aria-label': 'Remove'});
+		b.addEventListener('click', fn);
+		return b;
+	}
+	function addBtn(text, fn) {
+		var b = el('button', {type: 'button', 'class': 'btn btn-sm btn-outline-primary', text: text});
+		b.addEventListener('click', fn);
+		return b;
+	}
+	function refreshEmpty() { emptyEl.hidden = listEl.children.length > 0; }
+	function field(card, cls) { var n = card.querySelector('.' + cls); return n ? n.value : ''; }
+
+	function simpleRow(list, cls, value, ph, type) {
+		var row = el('div', {'class': 'rowline'});
+		var g = el('div', {'class': 'grow'}); g.appendChild(input(cls, value, ph, type));
+		row.appendChild(g); row.appendChild(rmBtn(function () { row.remove(); }));
+		list.appendChild(row);
+	}
+	function profileRow(list, p) {
+		var row = el('div', {'class': 'rowline profile-row'});
+		var cols = el('div', {'class': 'cols c2'});
+		cols.appendChild(labelled('Platform', input('profile-name', p.name, 'Google Scholar')));
+		cols.appendChild(labelled('URL', input('profile-url', p.url, 'https://…')));
+		row.appendChild(cols); row.appendChild(rmBtn(function () { row.remove(); }));
+		list.appendChild(row);
+	}
+	function eduRow(list, e) {
+		var row = el('div', {'class': 'rowline education-row'});
+		var cols = el('div', {'class': 'cols c3'});
+		cols.appendChild(labelled('Degree', input('edu-degree', e.degree)));
+		cols.appendChild(labelled('Year', input('edu-year', e.year)));
+		cols.appendChild(labelled('Institute', input('edu-institute', e.institute)));
+		row.appendChild(cols); row.appendChild(rmBtn(function () { row.remove(); }));
+		list.appendChild(row);
+	}
+	function pubRow(list, p) {
+		var row = el('div', {'class': 'rowline pubrow publication-row'});
+		var cols = el('div', {'class': 'cols c2'});
+		cols.appendChild(labelled('Authors', input('pub-authors', p.authors)));
+		cols.appendChild(labelled('Title', input('pub-title', p.title)));
+		cols.appendChild(labelled('Journal / venue', input('pub-journal', p.journal)));
+		cols.appendChild(labelled('Year', input('pub-year', p.year)));
+		cols.appendChild(labelled('Type', input('pub-type', p.type, 'journal / conference')));
+		cols.appendChild(labelled('Link', input('pub-link', p.link, 'https://…')));
+		row.appendChild(cols); row.appendChild(rmBtn(function () { row.remove(); }));
+		list.appendChild(row);
+	}
+	function bioRow(list, text) {
+		var row = el('div', {'class': 'rowline'});
+		var g = el('div', {'class': 'grow'});
+		var ta = el('textarea', {'class': 'form-control form-control-sm biography-para', rows: '3'});
+		ta.value = text || '';
+		g.appendChild(ta);
+		row.appendChild(g); row.appendChild(rmBtn(function () { row.remove(); }));
+		list.appendChild(row);
+	}
+	function listFieldset(title, cls, items, addLabel, addFn, blank) {
+		var fs = el('fieldset'); fs.appendChild(el('legend', {text: title}));
+		var list = el('div', {'class': cls});
+		items.forEach(function (it) { addFn(list, it); });
+		fs.appendChild(list);
+		fs.appendChild(addBtn(addLabel, function () { addFn(list, blank); }));
+		return fs;
+	}
+
+	function photoField(value) {
+		var w = el('div', {'class': 'image-field'});
+		var g = el('div', {'class': 'input-group input-group-sm'});
+		var i = el('input', {type: 'text', 'class': 'form-control js-image-url photo-url', placeholder: '/uploads/… or https://…'});
+		i.value = value || '';
+		var ap = document.createDocumentFragment();
+		ap.appendChild(el('button', {type: 'button', 'class': 'btn btn-outline-secondary js-pick-image', text: 'Choose'}));
+		ap.appendChild(el('button', {type: 'button', 'class': 'btn btn-outline-danger js-clear-image', text: 'Clear'}));
+		g.appendChild(i); g.appendChild(ap); w.appendChild(g);
+		var img = el('img', {'class': 'photo-prev js-image-preview', alt: ''});
+		img.src = value || ''; img.style.display = value ? '' : 'none';
+		w.appendChild(img);
+		return w;
+	}
+	function cvField(value) {
+		var w = el('div', {'class': 'file-field'});
+		var g = el('div', {'class': 'input-group input-group-sm'});
+		var i = el('input', {type: 'text', 'class': 'form-control js-file-url cv-url', placeholder: 'Upload a PDF or paste a link'});
+		i.value = value || '';
+		var ap = document.createDocumentFragment();
+		ap.appendChild(el('button', {type: 'button', 'class': 'btn btn-outline-secondary js-upload-file', text: 'Upload…'}));
+		ap.appendChild(el('button', {type: 'button', 'class': 'btn btn-outline-danger js-clear-file', text: 'Clear'}));
+		g.appendChild(i); g.appendChild(ap); w.appendChild(g);
+		w.appendChild(el('input', {type: 'file', 'class': 'd-none js-file-input'}));
+		w.appendChild(el('small', {'class': 'form-text text-muted js-file-status'}));
+		return w;
+	}
+	function select(cls, options, value) {
+		var s = el('select', {'class': 'form-select form-select-sm ' + cls});
+		options.forEach(function (o) {
+			var op = el('option', {value: o[0], text: o[1]}); if (o[0] === value) { op.selected = true; } s.appendChild(op);
+		});
+		return s;
+	}
+
+	function refreshSummary(card) {
+		card.querySelector('.summary-name').textContent = field(card, 'f-name') || 'Untitled ' + DATA.singular;
+		card.querySelector('.summary-title').textContent = field(card, 'f-title');
+		var photo = field(card, 'photo-url'), thumb = card.querySelector('.thumb');
+		if (photo) { thumb.src = photo; thumb.style.visibility = 'visible'; } else { thumb.removeAttribute('src'); thumb.style.visibility = 'hidden'; }
+		var g = card.querySelector('.f-group'); card.querySelector('.badge-group').textContent = g.options[g.selectedIndex].textContent;
+		card.querySelector('.badge-draft').hidden = field(card, 'f-status') !== 'draft';
+	}
+	function markDirty(card, on) {
+		var was = card.dataset.dirty === '1';
+		card.dataset.dirty = on ? '1' : '0';
+		card.querySelector('.dirty-note').textContent = on ? 'Unsaved changes' : '';
+		card.querySelector('.dirty-dot').hidden = !on;
+		if (on && !was) { dirtyCount++; } else if (!on && was) { dirtyCount--; }
+	}
+
+	function build(rec, isNew) {
+		rec = Object.assign({}, DATA.blank, rec || {});
+		var card = el('details', {'class': 'person-card', open: ''});
+		card.dataset.originalSlug = isNew ? '' : (rec.slug || '');
+		card.dataset.id = rec._id || '';
+
+		var sum = el('summary');
+		var thumb = el('img', {'class': 'thumb', alt: ''});
+		var txt = el('div', {'class': 'summary-text'}, [el('div', {'class': 'summary-name'}), el('div', {'class': 'summary-title'})]);
+		var badges = el('div', {'class': 'd-none d-md-block text-nowrap'}, [
+			el('span', {'class': 'badge text-bg-light border badge-group'}),
+			document.createTextNode(' '),
+			el('span', {'class': 'badge text-bg-warning badge-draft', text: 'Draft', hidden: ''}),
+			document.createTextNode(' '),
+			el('span', {'class': 'badge text-bg-danger dirty-dot', text: 'Unsaved', hidden: ''})
+		]);
+		var up = el('button', {type: 'button', 'class': 'btn btn-sm btn-light', text: '↑', title: 'Move up', 'aria-label': 'Move up'});
+		var down = el('button', {type: 'button', 'class': 'btn btn-sm btn-light', text: '↓', title: 'Move down', 'aria-label': 'Move down'});
+		[up, down].forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); }); });
+		up.addEventListener('click', function () { var p = card.previousElementSibling; if (p) { listEl.insertBefore(card, p); saveOrder(); } });
+		down.addEventListener('click', function () { var n = card.nextElementSibling; if (n) { listEl.insertBefore(n, card); saveOrder(); } });
+		sum.appendChild(thumb); sum.appendChild(txt); sum.appendChild(badges); sum.appendChild(up); sum.appendChild(down);
+		sum.appendChild(el('span', {'class': 'chev', text: '▸'}));
+		card.appendChild(sum);
+
+		var body = el('div', {'class': 'card-body-inner'});
+		var grid = el('div', {'class': 'grid2'});
+		grid.appendChild(labelled('Full name', input('f-name', rec.name)));
+		grid.appendChild(labelled('Name (Bengali)', input('f-bn', rec.name_bengali)));
+		grid.appendChild(labelled('Title / position', input('f-title', rec.title), {'class': 'span2'}));
+		grid.appendChild(labelled('Group', select('f-group', DATA.groups, rec.group)));
+		grid.appendChild(labelled('Visibility', select('f-status', [['published', 'Published'], ['draft', 'Draft (hidden)']], rec.status)));
+		grid.appendChild(labelled('Department', input('f-dept', rec.department)));
+		grid.appendChild(labelled('Institution', input('f-inst', rec.institution)));
+		grid.appendChild(labelled('Campus address', input('f-addr', rec.campus_address), {'class': 'span2'}));
+		grid.appendChild(labelled('Photo', photoField(rec.photo)));
+		if (has('profiles')) { grid.appendChild(labelled('CV (PDF)', cvField(rec.cv_url))); }
+		grid.appendChild(labelled('Slug (the address of the profile page)', input('f-slug', rec.slug, 'made from the name')));
+		body.appendChild(grid);
+
+		var emails = (rec.emails && rec.emails.length) ? rec.emails : [''];
+		body.appendChild(listFieldset('Email addresses', 'emails-list', emails, '+ Add email', function (l, v) { simpleRow(l, 'email-input', v, 'name@briu.ac.bd', 'email'); }, ''));
+
+		if (has('profiles')) {
+			var site = rec.personal_site || {};
+			var sfs = el('fieldset'); sfs.appendChild(el('legend', {text: 'Personal site'}));
+			var sc = el('div', {'class': 'cols c2'});
+			sc.appendChild(labelled('Label', input('site-label', site.label)));
+			sc.appendChild(labelled('URL', input('site-url', site.url, 'https://…')));
+			sfs.appendChild(sc); body.appendChild(sfs);
+			body.appendChild(listFieldset('Profiles (Google Scholar, ORCID, LinkedIn, …)', 'profiles-list', rec.profiles || [], '+ Add profile', profileRow, {}));
+		}
+		if (has('biography')) {
+			body.appendChild(listFieldset('Biography (one paragraph per box)', 'bio-list', (rec.biography && rec.biography.length) ? rec.biography : [''], '+ Add paragraph', bioRow, ''));
+		}
+		if (has('education')) {
+			body.appendChild(listFieldset('Education', 'edu-list', rec.education || [], '+ Add education entry', eduRow, {}));
+		}
+		if (has('research')) {
+			body.appendChild(listFieldset('Research interests', 'research-list', rec.research_interests || [], '+ Add interest', function (l, v) { simpleRow(l, 'research-interest', v, 'e.g. Machine Learning'); }, ''));
+		}
+		if (has('publications')) {
+			body.appendChild(listFieldset('Publications', 'pub-list', rec.publications || [], '+ Add publication', pubRow, {}));
+		}
+
+		var actions = el('div', {'class': 'card-actions'});
+		var left = el('div');
+		var save = el('button', {type: 'button', 'class': 'btn btn-primary btn-sm', text: 'Save'});
+		left.appendChild(save); left.appendChild(document.createTextNode(' '));
+		left.appendChild(el('span', {'class': 'dirty-note ms-2'}));
+		var right = el('div');
+		var view = el('a', {'class': 'btn btn-outline-secondary btn-sm view-link', target: '_blank', rel: 'noopener', text: 'View on site'});
+		var del = el('button', {type: 'button', 'class': 'btn btn-outline-danger btn-sm', text: 'Delete'});
+		right.appendChild(view); right.appendChild(document.createTextNode(' ')); right.appendChild(del);
+		actions.appendChild(left); actions.appendChild(right);
+		body.appendChild(actions);
+		card.appendChild(body);
+
+		function setView() {
+			var slug = card.dataset.originalSlug;
+			view.hidden = !slug;
+			if (slug) { view.href = DATA.basePath + slug; }
+		}
+		setView();
+
+		var slugEdited = !isNew;
+		card.querySelector('.f-slug').addEventListener('input', function () { slugEdited = true; });
+		card.querySelector('.f-name').addEventListener('input', function () {
+			if (!slugEdited) {
+				card.querySelector('.f-slug').value = this.value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/[\s-]+/g, '-');
+			}
+		});
+		card.addEventListener('input', function () { refreshSummary(card); markDirty(card, true); });
+		card.addEventListener('change', function () { refreshSummary(card); markDirty(card, true); });
+		card.addEventListener('click', function (e) {
+			if (e.target.closest('.rowline button, fieldset > button, .js-clear-image, .js-clear-file')) { markDirty(card, true); }
+		});
+
+		save.addEventListener('click', function () {
+			save.disabled = true; save.textContent = 'Saving…';
+			fetch('/admin/people/' + DATA.kind + '/save', {
+				method: 'POST', headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({original_slug: card.dataset.originalSlug, record: serialize(card)})
+			}).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+			.then(function (res) {
+				if (!res.ok) { setStatus((res.j.errors || ['Could not save.']).join(' '), true); return; }
+				card.dataset.originalSlug = res.j.record.slug;
+				card.dataset.id = res.j.record._id || '';
+				card.querySelector('.f-slug').value = res.j.record.slug;
+				slugEdited = true;
+				markDirty(card, false); setView(); refreshSummary(card);
+				setStatus('Saved ' + res.j.record.name + '.');
+			}).catch(function () { setStatus('Could not reach the server. Your changes are still on this page.', true); })
+			.then(function () { save.disabled = false; save.textContent = 'Save'; });
+		});
+		del.addEventListener('click', function () {
+			var name = field(card, 'f-name') || 'this entry';
+			if (!confirm('Delete ' + name + ' permanently?')) { return; }
+			var slug = card.dataset.originalSlug;
+			function gone() { if (card.dataset.dirty === '1') { dirtyCount--; } card.remove(); refreshEmpty(); setStatus('Deleted.'); }
+			if (!slug) { gone(); return; }
+			fetch('/admin/people/' + DATA.kind + '/delete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({slug: slug})})
+				.then(function (r) { if (r.ok) { gone(); } else { setStatus('Could not delete.', true); } });
+		});
+
+		refreshSummary(card);
+		return card;
+	}
+
+	function serialize(card) {
+		function all(sel, fn) { return Array.prototype.map.call(card.querySelectorAll(sel), fn); }
+		var rec = {
+			_id: card.dataset.id || '',
+			slug: field(card, 'f-slug'),
+			name: field(card, 'f-name'),
+			name_bengali: field(card, 'f-bn'),
+			title: field(card, 'f-title'),
+			group: field(card, 'f-group'),
+			status: field(card, 'f-status'),
+			department: field(card, 'f-dept'),
+			institution: field(card, 'f-inst'),
+			campus_address: field(card, 'f-addr'),
+			photo: field(card, 'photo-url'),
+			cv_url: field(card, 'cv-url'),
+			emails: all('.email-input', function (i) { return i.value; })
+		};
+		if (has('profiles')) {
+			rec.personal_site = {label: field(card, 'site-label'), url: field(card, 'site-url')};
+			rec.profiles = all('.profile-row', function (r) { return {name: r.querySelector('.profile-name').value, url: r.querySelector('.profile-url').value}; });
+		}
+		if (has('biography')) { rec.biography = all('.biography-para', function (t) { return t.value; }); }
+		if (has('education')) {
+			rec.education = all('.education-row', function (r) { return {degree: r.querySelector('.edu-degree').value, year: r.querySelector('.edu-year').value, institute: r.querySelector('.edu-institute').value}; });
+		}
+		if (has('research')) { rec.research_interests = all('.research-interest', function (i) { return i.value; }); }
+		if (has('publications')) {
+			rec.publications = all('.publication-row', function (r) {
+				return {authors: r.querySelector('.pub-authors').value, title: r.querySelector('.pub-title').value, journal: r.querySelector('.pub-journal').value,
+					year: r.querySelector('.pub-year').value, type: r.querySelector('.pub-type').value, link: r.querySelector('.pub-link').value};
+			});
+		}
+		return rec;
+	}
+
+	function saveOrder() {
+		var slugs = Array.prototype.map.call(listEl.children, function (c) { return c.dataset.originalSlug; }).filter(Boolean);
+		fetch('/admin/people/' + DATA.kind + '/reorder', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({slugs: slugs})})
+			.then(function () { setStatus('Order saved.'); });
+	}
+
+	DATA.records.forEach(function (r) { var c = build(r, false); c.open = false; listEl.appendChild(c); });
+	refreshEmpty();
+
+	document.getElementById('addBtn').addEventListener('click', function () {
+		var card = build(DATA.blank, true);
+		listEl.appendChild(card); refreshEmpty();
+		card.scrollIntoView({behavior: 'smooth', block: 'start'});
+		card.querySelector('.f-name').focus();
+		setStatus('New ' + DATA.singular + ': fill in the details, then press Save.');
+	});
+	var gSel = document.getElementById('peopleGroup');
+	DATA.groups.forEach(function (g) { var o = document.createElement('option'); o.value = g[0]; o.textContent = g[1]; gSel.appendChild(o); });
+	function applyFilter() {
+		var q = document.getElementById('peopleSearch').value.toLowerCase().trim();
+		var g = gSel.value, v = document.getElementById('peopleVis').value, shown = 0;
+		Array.prototype.forEach.call(listEl.children, function (card) {
+			var text = (field(card, 'f-name') + ' ' + field(card, 'f-bn') + ' ' + field(card, 'f-title') + ' ' + Array.prototype.map.call(card.querySelectorAll('.email-input'), function (i) { return i.value; }).join(' ')).toLowerCase();
+			var ok = (!q || text.indexOf(q) !== -1) && (!g || field(card, 'f-group') === g) && (!v || field(card, 'f-status') === v);
+			card.hidden = !ok; shown += ok;
+		});
+		setStatus(shown === listEl.children.length ? '' : shown + ' of ' + listEl.children.length + ' shown.');
+	}
+	['peopleSearch', 'peopleGroup', 'peopleVis'].forEach(function (id) { document.getElementById(id).addEventListener('input', applyFilter); });
+	document.getElementById('expandAll').addEventListener('click', function () { listEl.querySelectorAll('details').forEach(function (d) { d.open = true; }); });
+	document.getElementById('collapseAll').addEventListener('click', function () { listEl.querySelectorAll('details').forEach(function (d) { d.open = false; }); });
+	window.addEventListener('beforeunload', function (e) { if (dirtyCount > 0) { e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+{% endblock %}

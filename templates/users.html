@@ -1,0 +1,70 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-0">Users</h1>
+	<a href="{{ url_for('user_new') }}" class="btn btn-primary">Add user</a>
+</div>
+
+<div class="card mb-4">
+	<div class="card-body p-0">
+		<table class="table table-hover mb-0">
+			<thead class="table-light">
+				<tr>
+					<th>Name</th>
+					<th>Username</th>
+					<th>Email</th>
+					<th>Role</th>
+					<th>Status</th>
+					<th>2FA</th>
+					<th>Last login</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+			{% for u in users %}
+				<tr>
+					<td>{{ u.display_name }}{% if u.id == current_user.id %} <span class="badge text-bg-light border">you</span>{% endif %}</td>
+					<td><code>{{ u.username }}</code></td>
+					<td>{{ u.email }}</td>
+					<td>{{ role_labels[u.role] }}</td>
+					<td>{% if u.is_active %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Deactivated</span>{% endif %}</td>
+					<td>{{ 'On' if u.two_fa_enabled else 'Off' }}</td>
+					<td class="small text-muted">{{ (u.last_login_at or 'never')|string|truncate(16, True, '') }}</td>
+					<td class="actions text-end">
+						<a href="{{ url_for('user_edit', user_id=u.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+						{% if u.id != current_user.id %}
+						<button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteUser{{ u.id }}">Delete</button>
+						<div class="modal fade" id="deleteUser{{ u.id }}" tabindex="-1" role="dialog" aria-hidden="true">
+							<div class="modal-dialog" role="document"><div class="modal-content">
+								<div class="modal-header"><h5 class="modal-title">Delete {{ u.username }}?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+								<div class="modal-body text-start">Their pages and posts will be assigned to you. This cannot be undone.</div>
+								<div class="modal-footer">
+									<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+									<form method="post" action="{{ url_for('user_delete', user_id=u.id) }}" class="d-inline">
+										<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+										<button type="submit" class="btn btn-danger">Delete user</button>
+									</form>
+								</div>
+							</div></div>
+						</div>
+						{% endif %}
+					</td>
+				</tr>
+			{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<div class="card">
+	<div class="card-header bg-white"><strong>Roles</strong></div>
+	<div class="card-body">
+		<ul class="mb-0">
+			{% for key, label in role_labels.items() %}
+			<li><strong>{{ label }}</strong> — {{ role_descriptions[key] }}</li>
+			{% endfor %}
+		</ul>
+	</div>
+</div>
+{% endblock %}

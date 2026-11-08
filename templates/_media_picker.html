@@ -1,0 +1,65 @@
+<div class="modal fade" id="mediaPickerModal" tabindex="-1" role="dialog" aria-labelledby="mediaPickerTitle" aria-hidden="true">
+	<div class="modal-dialog modal-lg" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="mediaPickerTitle">Choose an image</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+			</div>
+			<div class="modal-body">
+				<div id="mediaPickerGrid" class="media-grid"></div>
+				<p class="small text-muted mt-3 mb-0">Need a new image? Upload it in <a href="/admin/media" target="_blank" rel="noopener">Media</a>, then reopen this picker.</p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="mediaPickerInsert">Use image</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+(function ($) {
+	var pickCallback = null;
+	var selectedUrl = null;
+
+	window.openMediaPicker = function (onPick) {
+		pickCallback = onPick;
+		selectedUrl = null;
+		var $grid = $('#mediaPickerGrid').html('<p class="text-muted">Loading images…</p>');
+		fetch('/admin/media?format=json')
+			.then(function (r) { return r.json(); })
+			.then(function (data) {
+				var items = data.items || [];
+				$grid.empty();
+				if (!items.length) {
+					$grid.html('<p class="text-muted">No images yet.</p>');
+				}
+				items.forEach(function (item) {
+					var $el = $('<div class="media-item"></div>').attr('data-url', item.url);
+					$el.append($('<img>').attr('src', item.url).attr('alt', item.alt_text || item.original_filename || ''));
+					var size = item.width && item.height ? item.width + ' × ' + item.height : '';
+					$el.append($('<small class="text-muted d-block mt-1"></small>').text(size));
+					$grid.append($el);
+				});
+				bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).show();
+			})
+			.catch(function () {
+				$grid.html('<p class="text-danger">Could not load the media library.</p>');
+				bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).show();
+			});
+	};
+
+	$(document).on('click', '#mediaPickerGrid .media-item', function () {
+		$('#mediaPickerGrid .media-item').removeClass('selected-media');
+		$(this).addClass('selected-media');
+		selectedUrl = $(this).attr('data-url');
+	});
+
+	$('#mediaPickerInsert').on('click', function () {
+		if (selectedUrl && pickCallback) {
+			pickCallback(selectedUrl);
+		}
+		bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).hide();
+	});
+})(window.jQuery);
+</script>

@@ -1,0 +1,70 @@
+{% extends "_admin_layout.html" %}
+{% block title %}WordPress &amp; Blogger{% endblock %}
+{% block content %}
+<h1 class="h3">WordPress &amp; Blogger</h1>
+<p class="text-muted">Bring a site here from WordPress or Blogger, or take your content to either of them. Users and passwords are never moved.</p>
+
+<div class="row">
+	<div class="col-lg-6 mb-4">
+		<form method="post" action="/admin/migrate/import" enctype="multipart/form-data" class="card card-body h-100">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<h2 class="h5">Import into FlexaFlow</h2>
+			<p class="small text-muted mb-2">
+				<strong>WordPress:</strong> Tools &rarr; Export &rarr; All content, download the <code>.xml</code>.<br>
+				<strong>Blogger:</strong> Settings &rarr; Manage blog &rarr; Back up content, download the <code>.xml</code>.
+				A Google Takeout Blogger <code>feed.atom</code> file also works.
+			</p>
+			<div class="mb-3"><input type="file" class="form-control" name="file" accept=".xml,.atom" required></div>
+			<div class="mb-3">
+				<label class="small fw-bold" for="mSource">Comes from</label>
+				<select class="form-select form-select-sm" id="mSource" name="source">
+					<option value="auto">Detect automatically</option>
+					<option value="wordpress">WordPress</option>
+					<option value="blogger">Blogger</option>
+				</select>
+			</div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mi1" name="pages" value="1" checked><label class="form-check-label" for="mi1">Import pages as well as posts</label></div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mi2" name="drafts" value="1" checked><label class="form-check-label" for="mi2">Include drafts, pending and private items (kept as drafts)</label></div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mi3" name="media" value="1"><label class="form-check-label" for="mi3">Copy the images from the old site into the media library <small class="text-muted">(the old site must still be online; the first 150 are copied here, use the command line for more)</small></label></div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mi4" name="settings" value="1"><label class="form-check-label" for="mi4">Use the old site's title and description</label></div>
+			<div class="form-check mb-3"><input type="checkbox" class="form-check-input" id="mi5" name="menu" value="1"><label class="form-check-label" for="mi5">Replace my navigation menu with the WordPress menu <small class="text-muted">(WordPress only)</small></label></div>
+			<div class="mb-3">
+				<label class="small fw-bold" for="mConflict">If an address already exists here</label>
+				<select class="form-select form-select-sm" id="mConflict" name="conflict">
+					<option value="skip">Keep mine, skip the imported item</option>
+					<option value="rename">Keep both (the imported one gets -2)</option>
+					<option value="update">Replace mine with the imported one</option>
+				</select>
+			</div>
+			<div><button class="btn btn-primary">Import</button></div>
+			<p class="small text-muted mt-3 mb-0">
+				Imported HTML is cleaned (scripts and unsafe attributes removed). A post gets its first WordPress category; any further categories and all Blogger labels become tags.
+				Comments are not imported. Everything is added under your account.
+			</p>
+		</form>
+	</div>
+
+	<div class="col-lg-6 mb-4">
+		<form method="post" action="/admin/migrate/export" class="card card-body h-100">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<h2 class="h5">Export from FlexaFlow</h2>
+			<div class="form-check mb-1"><input type="radio" class="form-check-input" id="mx1" name="target" value="wordpress" checked><label class="form-check-label" for="mx1"><strong>WordPress</strong> <small class="text-muted">&ndash; then Tools &rarr; Import &rarr; WordPress</small></label></div>
+			<div class="form-check mb-3"><input type="radio" class="form-check-input" id="mx2" name="target" value="blogger"><label class="form-check-label" for="mx2"><strong>Blogger</strong> <small class="text-muted">&ndash; then Settings &rarr; Back up content &rarr; Restore</small></label></div>
+			<div class="mb-3">
+				<label class="small fw-bold" for="mBase">Public address of this site</label>
+				<input type="text" class="form-control form-control-sm" id="mBase" name="base_url" value="{{ default_base }}" required>
+				<small class="text-muted">Used to turn image and link addresses like <code>/uploads/x.jpg</code> into full web addresses, so they keep working after the move.</small>
+			</div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mx3" name="pages" value="1" checked><label class="form-check-label" for="mx3">Include pages</label></div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mx4" name="drafts" value="1" checked><label class="form-check-label" for="mx4">Include drafts</label></div>
+			<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="mx5" name="media" value="1" checked><label class="form-check-label" for="mx5">List media library files so WordPress downloads them <small class="text-muted">(WordPress only)</small></label></div>
+			<div class="form-check mb-3"><input type="checkbox" class="form-check-input" id="mx6" name="menu" value="1" checked><label class="form-check-label" for="mx6">Include the navigation menu <small class="text-muted">(WordPress only)</small></label></div>
+			<div><button class="btn btn-primary">Download export</button></div>
+			<p class="small text-muted mt-3 mb-0">
+				WordPress and Blogger fetch images from this site while importing, so it must be reachable from the internet at the address above.
+				Page templates, extension records (such as faculty profiles) and other FlexaFlow-only features are not part of these formats; use Site &rarr; Export for a full backup.
+			</p>
+		</form>
+	</div>
+</div>
+{% endblock %}

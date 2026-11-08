@@ -1,0 +1,16 @@
+{% if pager and pager.total_pages > 1 %}
+{% set qs = (pager.query ~ '&') if pager.query else '' %}
+<nav aria-label="Page navigation">
+	<ul class="pagination flex-wrap">
+		{% if pager.prev_page %}<li class="page-item"><a class="page-link" href="?{{ qs }}page={{ pager.prev_page }}">&larr; Previous</a></li>{% endif %}
+		{% for p in pager.pages %}
+			{% if p == 1 or p == pager.total_pages or (p - pager.current_page)|abs <= 2 %}
+			<li class="page-item {% if p == pager.current_page %}active{% endif %}"><a class="page-link" href="?{{ qs }}page={{ p }}">{{ p }}</a></li>
+			{% elif (p - pager.current_page)|abs == 3 %}
+			<li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+			{% endif %}
+		{% endfor %}
+		{% if pager.next_page %}<li class="page-item"><a class="page-link" href="?{{ qs }}page={{ pager.next_page }}">Next &rarr;</a></li>{% endif %}
+	</ul>
+</nav>
+{% endif %}

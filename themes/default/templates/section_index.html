@@ -1,0 +1,27 @@
+{% extends "main/master.html" %}
+{% block title %}{{ section.name }} · {{ settings.site_title }}{% endblock %}
+{% block content %}
+<div class="mb-4 p-4 bg-light rounded">
+	<h1 class="mb-2">{{ section.name }}</h1>
+	{% if section.description %}<p class="lead mb-0">{{ section.description }}</p>{% endif %}
+</div>
+{% if pagination.records %}
+	{% for item in pagination.records %}
+	<article class="blog-post mb-4">
+		<p class="text-muted small mb-1">{{ item.published_at | pretty_date(section.show_time) }}</p>
+		<h2 class="h4"><a href="{{ item.url }}" class="text-dark">{{ item.title }}</a></h2>
+		{% if item.excerpt %}<p>{{ item.excerpt }}</p>{% endif %}
+		<a href="{{ item.url }}">Read more &rarr;</a>
+	</article>
+	{% endfor %}
+	{% if pagination.total_pages > 1 %}
+	<nav class="d-flex justify-content-between mt-4" aria-label="Pagination">
+		{% if pagination.has_prev %}<a href="/{{ section.section_path }}/?page={{ pagination.prev_page }}">&larr; Newer</a>{% else %}<span></span>{% endif %}
+		<span class="text-muted">Page {{ pagination.page }} of {{ pagination.total_pages }}</span>
+		{% if pagination.has_next %}<a href="/{{ section.section_path }}/?page={{ pagination.next_page }}">Older &rarr;</a>{% else %}<span></span>{% endif %}
+	</nav>
+	{% endif %}
+{% else %}
+<div class="alert alert-info">Nothing has been published in {{ section.name }} yet.</div>
+{% endif %}
+{% endblock %}

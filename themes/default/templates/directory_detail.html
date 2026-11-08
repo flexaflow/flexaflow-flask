@@ -1,0 +1,22 @@
+{% extends "main/master.html" %}
+{% block title %}{{ record.name }} · {{ cfg.label }} · {{ settings.site_title }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-3"><a href="/">Home</a> / <a href="{{ cfg.base_path }}">{{ cfg.label }}</a></nav>
+<div class="row">
+	<aside class="col-md-4 mb-4">
+		{% if record.photo %}<img src="{{ record.photo }}" alt="{{ record.name }}" class="img-fluid rounded mb-3">{% endif %}
+		<h1 class="h3">{{ record.name }}</h1>
+		<p class="text-muted">{{ record.title }}</p>
+		{% for e in record.emails if e %}<p class="mb-1"><a href="mailto:{{ e }}">{{ e }}</a></p>{% endfor %}
+		{% if record.personal_site and record.personal_site.url %}<p><a href="{{ record.personal_site.url }}" target="_blank" rel="noopener">{{ record.personal_site.label or record.personal_site.url }}</a></p>{% endif %}
+		{% if record.cv_url %}<p><a href="{{ record.cv_url }}" target="_blank" rel="noopener">Download CV</a></p>{% endif %}
+		{% for p in record.profiles if p.url %}<p class="mb-1"><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.name or p.url }}</a></p>{% endfor %}
+	</aside>
+	<div class="col-md-8">
+		{% for p in record.biography|select|list %}<p>{{ p }}</p>{% endfor %}
+		{% if record.education %}<h2 class="h5 mt-4">Education</h2><ul>{% for e in record.education %}<li>{{ e.degree }}{% if e.year %}, {{ e.year }}{% endif %}{% if e.institute %} – {{ e.institute }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+		{% if record.research_interests %}<h2 class="h5 mt-4">Research interests</h2><p>{% for r in record.research_interests %}<span class="badge text-bg-light border">{{ r }}</span> {% endfor %}</p>{% endif %}
+		{% if record.publications %}<h2 class="h5 mt-4">Publications</h2><ol>{% for pub in record.publications %}<li>{% if pub.authors %}{{ pub.authors }}, {% endif %}<strong>{{ pub.title }}</strong>{% if pub.journal %}, <em>{{ pub.journal }}</em>{% endif %}{% if pub.year %}, {{ pub.year }}{% endif %}.{% if pub.link %} <a href="{{ pub.link }}" target="_blank" rel="noopener">Link</a>{% endif %}</li>{% endfor %}</ol>{% endif %}
+	</div>
+</div>
+{% endblock %}

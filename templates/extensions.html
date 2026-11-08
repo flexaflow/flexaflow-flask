@@ -1,0 +1,69 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Extensions{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<div>
+		<h1 class="h3 mb-0">Extensions</h1>
+		<small class="text-muted">FlexaFlow {{ core_version }} · Add features, themes and ready-made content by uploading an extension.</small>
+	</div>
+</div>
+
+{% if allow_upload %}
+<div class="card mb-4"><div class="card-body">
+	<form method="post" action="/admin/extensions/upload" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center">
+		<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+		<label class="me-2 fw-bold" for="extFile">Upload extension</label>
+		<input type="file" id="extFile" name="file" accept=".zip" class="form-control me-2" required>
+		<button class="btn btn-primary btn-sm">Upload &amp; install</button>
+	</form>
+	<div class="alert alert-warning small mt-3 mb-0">
+		An extension is program code that runs with full access to this site. Only install extensions from people you trust.
+		Uploading replaces an installed extension with the same name (its content is kept).
+	</div>
+</div></div>
+{% else %}
+<div class="alert alert-info">Uploading is turned off on this server. Copy extension folders into <code>extensions/</code> and refresh this page.</div>
+{% endif %}
+
+{% if not items %}
+<p class="text-muted">No extensions installed yet.</p>
+{% endif %}
+
+<div class="row">
+{% for e in items %}
+	<div class="col-lg-6 mb-3">
+		<div class="card h-100 {% if e.active %}border-success{% endif %}">
+			<div class="card-body d-flex flex-column">
+				<div class="d-flex justify-content-between">
+					<h2 class="h5 mb-1">{{ e.name }} <small class="text-muted">v{{ e.version }}</small></h2>
+					{% if e.active %}<span class="badge text-bg-success align-self-start">Active</span>{% else %}<span class="badge text-bg-secondary align-self-start">Inactive</span>{% endif %}
+				</div>
+				{% if e.author %}<div class="small text-muted mb-2">by {{ e.author }}</div>{% endif %}
+				<p class="mb-2">{{ e.description }}</p>
+				{% if e.error %}<div class="alert alert-danger small">{{ e.error }}</div>{% endif %}
+				{% if e.load_error %}<div class="alert alert-danger small">Could not load: {{ e.load_error }}</div>{% endif %}
+				{% if e.provides %}<ul class="small text-muted ps-3 mb-2">{% for p in e.provides %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+				<div class="mt-auto d-flex flex-wrap">
+					{% if not e.error %}
+						{% if e.active %}
+						<form method="post" action="/admin/extensions/{{ e.slug }}/deactivate" class="me-2 mb-1"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-outline-secondary btn-sm">Deactivate</button></form>
+						{% if e.has_settings %}<a class="btn btn-outline-primary btn-sm me-2 mb-1" href="/admin/extensions/{{ e.slug }}/settings">Settings</a>{% endif %}
+						{% if e.has_demo %}
+						<form method="post" action="/admin/extensions/{{ e.slug }}/demo" class="me-2 mb-1" onsubmit="return confirm('Install the sample content? Existing items with the same address are kept unless you tick Replace.')">
+							<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+							<button class="btn btn-outline-primary btn-sm" title="{{ e.demo.description }}">{{ e.demo.label }}</button>
+							<label class="small ms-1 mb-0"><input type="checkbox" name="overwrite" value="1"> Replace</label>
+						</form>
+						{% endif %}
+						{% else %}
+						<form method="post" action="/admin/extensions/{{ e.slug }}/activate" class="me-2 mb-1"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success btn-sm">Activate</button></form>
+						{% endif %}
+					{% endif %}
+					<form method="post" action="/admin/extensions/{{ e.slug }}/delete" class="ms-auto mb-1" onsubmit="return confirm('Delete this extension from the server? Content it created is kept.')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-link text-danger btn-sm">Delete</button></form>
+				</div>
+			</div>
+		</div>
+	</div>
+{% endfor %}
+</div>
+{% endblock %}

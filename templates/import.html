@@ -1,40 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Import Content - Admin</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
-            <div>
-                <a href="/admin" class="btn btn-outline-light">Back to Admin</a>
-            </div>
-        </div>
-    </nav>
-    <div class="container mt-4">
-        <h2>Import Content</h2>
-        <form method="post" enctype="multipart/form-data" class="mt-4">
-            <div class="form-group">
-                <label for="file">Select XML File</label>
-                <input type="file" class="form-control-file" id="file" name="file" accept=".xml" required>
-            </div>
-            <button type="submit" class="btn btn-primary mt-2">Import</button>
-        </form>
-        <div class="alert alert-info mt-4">
-            <strong>Note:</strong> Only XML files exported from FlexaFlow can be imported.
-        </div>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
-</body>
-</html>
+{% extends "_admin_layout.html" %}
+{% block title %}Import{% endblock %}
+{% block content %}
+<h1 class="h3">Import</h1>
+<p class="text-muted">Upload a package made by <a href="/admin/export">Export</a> (.zip). Older XML exports still work. Coming from WordPress or Blogger? Use <a href="/admin/migrate">WordPress &amp; Blogger</a>.</p>
+<form method="post" enctype="multipart/form-data" class="card card-body" style="max-width:760px">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<div class="mb-3"><input type="file" class="form-control" name="file" accept=".zip,.xml" required></div>
+	<p class="mb-1"><strong>Import which parts?</strong> <small class="text-muted">(parts missing from the file are ignored)</small></p>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i1" name="content" value="1" checked><label class="form-check-label" for="i1">Content (pages, posts, sections, tags)</label></div>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i2" name="settings" value="1" checked><label class="form-check-label" for="i2">Site settings</label></div>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i3" name="extension_data" value="1" checked><label class="form-check-label" for="i3">Extension data (shown once the extension is active)</label></div>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i4" name="media" value="1" checked><label class="form-check-label" for="i4">Media files</label></div>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i5" name="packages_extensions" value="1" checked><label class="form-check-label" for="i5">Install extensions in the file (they stay <em>inactive</em>)</label></div>
+	<div class="form-check mb-3"><input type="checkbox" class="form-check-input" id="i6" name="packages_themes" value="1" checked><label class="form-check-label" for="i6">Install themes in the file (they are <em>not</em> activated)</label></div>
+	<hr>
+	<div class="form-check mb-1"><input type="checkbox" class="form-check-input" id="i7" name="overwrite" value="1"><label class="form-check-label" for="i7">Overwrite items with the same address (otherwise existing ones are kept)</label></div>
+	<div class="form-check mb-3"><input type="checkbox" class="form-check-input" id="i8" name="restore_state" value="1"><label class="form-check-label" for="i8">Also switch on the same extensions and theme the exported site used</label></div>
+	<div><button class="btn btn-primary">Import</button></div>
+</form>
+{% endblock %}

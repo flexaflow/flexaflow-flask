@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="csrf-token" content="{{ csrf_token }}">
+	<meta name="robots" content="noindex">
+	<title>{% block title %}Admin{% endblock %} · FlexaFlow</title>
+	<link rel="icon" type="image/x-icon" href="/static/flexaflow.ico">
+	<link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
+	<link rel="stylesheet" href="/static/admin/admin.css">
+	<script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
+	<script src="/static/admin/admin.js"></script>
+	{% block head %}{% endblock %}
+</head>
+<body class="admin-body">
+	<nav class="navbar navbar-expand-lg navbar-dark bg-dark admin-nav">
+		<div class="container-fluid">
+			<a class="navbar-brand" href="/admin">FlexaFlow</a>
+			<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#adminNav" aria-controls="adminNav" aria-expanded="false" aria-label="Toggle navigation">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="adminNav">
+				<ul class="navbar-nav me-auto">
+					<li class="nav-item"><a class="nav-link" href="/admin">Dashboard</a></li>
+					{% if can('create_posts') %}
+					<li class="nav-item dropdown">
+						<a class="nav-link dropdown-toggle" href="#" id="publishMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Publish</a>
+						<div class="dropdown-menu" aria-labelledby="publishMenu">
+							{% for s in nav_sections %}
+							<a class="dropdown-item" href="/post/add?section={{ s.section_path }}">New {{ (s.singular_name or s.name)|lower }} <small class="text-muted">/{{ s.section_path }}/</small></a>
+							{% endfor %}
+							{% if nav_sections %}<div class="dropdown-divider"></div>{% endif %}
+							<a class="dropdown-item" href="/post/add">New post (no section)</a>
+							<div class="dropdown-divider"></div>
+							<a class="dropdown-item" href="/admin/posts">All posts &amp; search…</a>
+							{% if can('manage_settings') %}
+							<div class="dropdown-divider"></div>
+							<a class="dropdown-item" href="{{ url_for('content.sections_index') }}">Manage sections…</a>
+							{% endif %}
+						</div>
+					</li>
+					{% endif %}
+					{% if can('manage_pages') %}
+						<li class="nav-item dropdown">
+							<a class="nav-link dropdown-toggle" href="#" id="pagesMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Pages</a>
+							<div class="dropdown-menu" aria-labelledby="pagesMenu">
+								<a class="dropdown-item" href="/admin">All pages</a>
+								<div class="dropdown-divider"></div>
+								{% for key, t in page_templates.items() if key != 'default' %}
+								<a class="dropdown-item" href="/page/add?template={{ key }}">+ New {{ (t.label or key)|lower }}</a>
+								{% endfor %}
+								<a class="dropdown-item" href="/page/add">+ New plain page</a>
+							</div>
+						</li>
+						{% endif %}
+						{% if can('manage_people') and ENTRY_KINDS %}
+						<li class="nav-item dropdown">
+							<a class="nav-link dropdown-toggle" href="#" id="peopleMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">People</a>
+							<div class="dropdown-menu" aria-labelledby="peopleMenu">
+								{% for k, cfg in ENTRY_KINDS.items() %}
+								<a class="dropdown-item" href="/admin/people/{{ k }}">{{ cfg.label }}</a>
+								{% endfor %}
+							</div>
+						</li>
+						{% endif %}
+						{% for m in ext_admin_menus %}
+						<li class="nav-item dropdown">
+							<a class="nav-link dropdown-toggle" href="#" id="extMenu{{ loop.index }}" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{{ m.label }}</a>
+							<div class="dropdown-menu" aria-labelledby="extMenu{{ loop.index }}">
+								{% for it in m['items'] %}
+								{% if it.divider %}<div class="dropdown-divider"></div>{% else %}<a class="dropdown-item" href="{{ it.url }}">{{ it.label }}</a>{% endif %}
+								{% endfor %}
+							</div>
+						</li>
+						{% endfor %}
+						{% if can('upload_media') %}<li class="nav-item"><a class="nav-link" href="/admin/media">Media</a></li>{% endif %}
+					{% if can('manage_taxonomy') or can('manage_users') or can('manage_settings') or can('manage_extensions') %}
+					<li class="nav-item dropdown">
+						<a class="nav-link dropdown-toggle" href="#" id="siteMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Site</a>
+						<div class="dropdown-menu" aria-labelledby="siteMenu">
+							{% if can('manage_settings') %}
+							<a class="dropdown-item" href="{{ url_for('content.sections_index') }}">Sections &amp; addresses</a>
+							<a class="dropdown-item" href="/admin/menu">Navigation menu</a>
+							<a class="dropdown-item" href="/admin/settings">Settings</a>
+							{% endif %}
+							{% if can('manage_taxonomy') %}<a class="dropdown-item" href="/admin/tags-and-catagories">Categories &amp; tags</a>{% endif %}
+							{% if can('manage_users') %}<a class="dropdown-item" href="/admin/users">Users</a>{% endif %}
+								{% if can('manage_extensions') %}<a class="dropdown-item" href="/admin/themes">Themes</a><a class="dropdown-item" href="/admin/extensions">Extensions</a>{% endif %}
+							{% if can('manage_settings') %}
+							<div class="dropdown-divider"></div>
+							<a class="dropdown-item" href="/admin/export">Export</a>
+							<a class="dropdown-item" href="/admin/import">Import</a>
+							<a class="dropdown-item" href="/admin/migrate">WordPress &amp; Blogger</a>
+							{% endif %}
+						</div>
+					</li>
+					{% endif %}
+				</ul>
+				<form class="d-flex flex-wrap align-items-center me-2 my-2 my-lg-0" action="/admin/posts" method="get" role="search">
+					<input class="form-control form-control-sm" type="search" name="q" placeholder="Search posts…" aria-label="Search posts" style="min-width:150px">
+				</form>
+				<div class="d-flex align-items-center">
+					<a class="nav-link text-light px-2" href="/admin/profile" title="Your profile">
+						{{ current_user.display_name }}
+						<span class="badge text-bg-secondary">{{ ROLE_LABELS[current_user.role] }}</span>
+					</a>
+					<a class="btn btn-sm btn-outline-light ms-2" href="/" target="_blank" rel="noopener">View site</a>
+					<a class="btn btn-sm btn-outline-light ms-2" href="/logout">Log out</a>
+				</div>
+			</div>
+		</div>
+	</nav>
+
+	<main class="container-fluid px-4 py-4">
+		{% with messages = get_flashed_messages(with_categories=true) %}
+			{% for category, message in messages %}
+			<div class="alert alert-{{ 'danger' if category in ('error', 'danger') else ('success' if category == 'success' else ('warning' if category == 'warning' else 'info')) }} alert-dismissible fade show" role="alert">
+				{{ message }}
+				<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+			</div>
+			{% endfor %}
+		{% endwith %}
+		{% block content %}{% endblock %}
+	</main>
+
+	<script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
+	{% block scripts %}{% endblock %}
+</body>
+</html>

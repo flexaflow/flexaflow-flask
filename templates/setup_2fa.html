@@ -39,6 +39,8 @@
             margin: 20px 0;
         }
     </style>
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="/static/admin/admin.js"></script>
 </head>
 <body>
     <div class="container">
@@ -68,7 +70,7 @@
             </div>
 
             <div class="qr-container">
-                <img src="data:image/svg+xml;base64,{{ qr_code }}" alt="QR Code" class="qr-code">
+                <div id="qrcode" class="qr-code" role="img" aria-label="2FA QR code"></div>
             </div>
 
             <div class="text-center">
@@ -80,6 +82,7 @@
             <hr class="my-4">
 
             <form method="POST" action="{{ url_for('setup_2fa') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3 text-center">
                     <label for="verify_2fa_code" class="form-label">Verify 2FA Code</label>
                     <input type="text" class="form-control w-50 mx-auto" id="verify_2fa_code" name="verify_2fa_code" required placeholder="Enter 6-digit code" pattern="[0-9]{6}" maxlength="6">
@@ -89,11 +92,24 @@
                 </div>
             </form>
             <form method="POST" action="{{ url_for('setup_2fa') }}" class="text-center mt-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="cancel_2fa" value="1">
                 <button type="submit" class="btn btn-secondary">Skip & Continue to Login</button>
             </form>
         </div>
     </div>
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
+    <script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+	(function () {
+		var uri = {{ provisioning_uri|tojson }};
+		var box = document.getElementById('qrcode');
+		try {
+			new QRCode(box, { text: uri, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+		} catch (e) {
+			box.textContent = 'QR code unavailable. Use the manual key below.';
+		}
+	})();
+</script>
 </body>
 </html>

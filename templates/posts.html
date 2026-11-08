@@ -1,0 +1,135 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Posts{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-2">{{ 'My posts' if only_mine else 'All posts' }} <small class="text-muted">({{ result.total }})</small></h1>
+	<div class="mb-2">
+		{% for s in nav_sections %}<a class="btn btn-sm btn-primary me-1 mb-1" href="/post/add?section={{ s.section_path }}">+ {{ (s.singular_name or s.name)|lower }}</a>{% endfor %}
+		<a class="btn btn-sm btn-outline-primary mb-1" href="/post/add">+ post</a>
+	</div>
+</div>
+
+<form method="get" class="card card-body mb-3" id="filterForm">
+	<div class="row g-2">
+		<div class="mb-3 col-md-4">
+			<label class="small text-muted mb-0" for="fq">Search</label>
+			<input type="search" class="form-control" id="fq" name="q" value="{{ filters.q }}" placeholder="Title, address or text…" autofocus>
+		</div>
+		<div class="mb-3 col-md-2">
+			<label class="small text-muted mb-0" for="fcat">Section / category</label>
+			<select class="form-select" id="fcat" name="category">
+				<option value="">All</option>
+				{% for slug, c in categories.items() %}<option value="{{ slug }}" {{ 'selected' if filters.category == slug }}>{{ c.name }}{% if c.section_path %} (/{{ c.section_path }}/){% endif %}</option>{% endfor %}
+				<option value="none" {{ 'selected' if filters.category == 'none' }}>No category</option>
+			</select>
+		</div>
+		<div class="mb-3 col-md-2">
+			<label class="small text-muted mb-0" for="fstatus">Status</label>
+			<select class="form-select" id="fstatus" name="status">
+				<option value="">Any</option>
+				<option value="published" {{ 'selected' if filters.status == 'published' }}>Published</option>
+				<option value="draft" {{ 'selected' if filters.status == 'draft' }}>Draft</option>
+			</select>
+		</div>
+		{% if not only_mine %}
+		<div class="mb-3 col-md-2">
+			<label class="small text-muted mb-0" for="fauthor">Author</label>
+			<select class="form-select" id="fauthor" name="author">
+				<option value="">Anyone</option>
+				{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if filters.author == u.id|string }}>{{ u.display_name }}</option>{% endfor %}
+			</select>
+		</div>
+		{% endif %}
+		<div class="mb-3 col-md-2">
+			<label class="small text-muted mb-0" for="fsort">Sort by</label>
+			<select class="form-select" id="fsort" name="sort">
+				{% for key, (label, _) in sorts.items() %}<option value="{{ key }}" {{ 'selected' if (filters.sort or 'newest') == key }}>{{ label }}</option>{% endfor %}
+			</select>
+		</div>
+	</div>
+	<div class="row g-2 align-items-end">
+		<div class="col-md-2 mb-0"><label class="small text-muted mb-0" for="ffrom">Date from</label><input type="date" class="form-control" id="ffrom" name="from" value="{{ filters['from'] }}"></div>
+		<div class="col-md-2 mb-0"><label class="small text-muted mb-0" for="fto">Date to</label><input type="date" class="form-control" id="fto" name="to" value="{{ filters.to }}"></div>
+		<div class="col-md-8 mt-2 mt-md-0 text-md-end">
+			<button class="btn btn-primary" type="submit">Search</button>
+			<a class="btn btn-outline-secondary" href="{{ url_for('content.posts_list') }}">Clear</a>
+		</div>
+	</div>
+</form>
+
+<form method="post" action="{{ url_for('content.posts_bulk') }}" id="bulkForm">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+	<div class="d-flex flex-wrap align-items-center mb-2" id="bulkBar">
+		<select class="form-select form-select-sm w-auto me-2 mb-1" name="action" id="bulkAction" aria-label="Bulk action">
+			<option value="">Bulk action…</option>
+			{% if can_publish %}<option value="publish">Publish</option>{% endif %}
+			<option value="draft">Move to draft</option>
+			<option value="category">Change section / category…</option>
+			<option value="delete">Delete</option>
+		</select>
+		<select class="form-select form-select-sm w-auto me-2 mb-1" name="category" id="bulkCategory" hidden aria-label="New section or category">
+			<option value="">No category</option>
+			{% for slug, c in categories.items() %}<option value="{{ slug }}">{{ c.name }}</option>{% endfor %}
+		</select>
+		<button class="btn btn-sm btn-outline-primary mb-1" type="submit" id="bulkApply" disabled>Apply to <span id="selCount">0</span> selected</button>
+	</div>
+
+	<div class="card"><div class="card-body p-0"><div class="table-responsive">
+		<table class="table table-hover mb-0">
+			<thead class="table-light"><tr>
+				<th style="width:36px"><input type="checkbox" id="selectAll" aria-label="Select all on this page"></th>
+				<th>Title</th><th>Author</th><th>Section / category</th><th>Status</th><th>Date</th><th></th>
+			</tr></thead>
+			<tbody>
+			{% for p in result.records %}
+				<tr>
+					<td>{% if p.can_modify %}<input type="checkbox" class="row-check" name="ids" value="{{ p.id }}" aria-label="Select {{ p.title }}">{% endif %}</td>
+					<td><a href="{{ url_for('edit_post', slug=p.slug) }}"><strong>{{ p.title }}</strong></a><br><small class="text-muted">{{ p.public_url }}</small></td>
+					<td class="small">{{ p.author_name }}</td>
+					<td class="small">{{ p.category.name if p.category else '—' }}</td>
+					<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
+					<td class="small text-muted text-nowrap">{{ (p.date|string)[:10] }}</td>
+					<td class="text-end text-nowrap">
+						<a href="{{ url_for('edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+						{% if p.status == 'published' %}<a href="{{ p.public_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>{% endif %}
+					</td>
+				</tr>
+			{% else %}
+				<tr><td colspan="7" class="text-center text-muted py-5">No posts match. <a href="{{ url_for('content.posts_list') }}">Clear the filters</a>.</td></tr>
+			{% endfor %}
+			</tbody>
+		</table>
+	</div></div></div>
+</form>
+
+{% if result.pages > 1 %}
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Pages">
+	{% set base = url_for('content.posts_list') ~ '?' ~ (query_string ~ '&' if query_string else '') %}
+	{% if result.page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ base }}page={{ result.page - 1 }}">&larr; Previous</a>{% else %}<span></span>{% endif %}
+	<span class="small text-muted">Page {{ result.page }} of {{ result.pages }}</span>
+	{% if result.page < result.pages %}<a class="btn btn-sm btn-outline-secondary" href="{{ base }}page={{ result.page + 1 }}">Next &rarr;</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function ($) {
+	function refresh() {
+		var n = $('.row-check:checked').length;
+		$('#selCount').text(n);
+		$('#bulkApply').prop('disabled', !(n && $('#bulkAction').val()));
+		$('#bulkCategory').prop('hidden', $('#bulkAction').val() !== 'category');
+	}
+	$('#selectAll').on('change', function () { $('.row-check').prop('checked', this.checked); refresh(); });
+	$(document).on('change', '.row-check, #bulkAction', refresh);
+	$('#bulkForm').on('submit', function (e) {
+		var a = $('#bulkAction').val(), n = $('.row-check:checked').length;
+		if (a === 'delete' && !confirm('Permanently delete ' + n + ' post(s)? This cannot be undone.')) { e.preventDefault(); }
+	});
+	$('#filterForm select, #filterForm input[type=date]').on('change', function () { $('#filterForm').trigger('submit'); });
+	refresh();
+})(window.jQuery);
+</script>
+{% endblock %}

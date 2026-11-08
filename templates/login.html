@@ -1,77 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - FlexaFlow CMS</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            padding-top: 40px;
-        }
-        .login-form {
-            max-width: 400px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .logo-container {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-    </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="robots" content="noindex">
+	<title>Log in · FlexaFlow</title>
+	<link rel="icon" type="image/x-icon" href="/static/flexaflow.ico">
+	<link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
+	<style>
+		body { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f1f3f5; }
+		.login-card { width: 100%; max-width: 400px; }
+	</style>
 </head>
 <body>
-    <div class="container">
-        <div class="login-form">
-            <div class="logo-container">
-                <h1>FlexaFlow CMS</h1>
-                <p class="text-muted">Please log in to continue</p>
-            </div>
+	<div class="login-card px-3">
+		<div class="text-center mb-4">
+			<img src="/static/flexaflow.png" alt="" width="56" height="56" class="mb-2">
+			<h1 class="h4">FlexaFlow</h1>
+		</div>
+		<div class="card shadow-sm">
+			<div class="card-body p-4">
+				{% with messages = get_flashed_messages(with_categories=true) %}
+					{% for category, message in messages %}
+					<div class="alert alert-{{ 'danger' if category in ('error', 'danger') else category }} py-2 small" role="alert">{{ message }}</div>
+					{% endfor %}
+				{% endwith %}
 
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+				<form method="POST" action="{{ url_for('login') }}" autocomplete="on">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+					<input type="hidden" name="next" value="{{ next_url }}">
 
-            <form method="POST" action="{{ url_for('login') }}">
-                {% if not show_2fa %}
-                <div class="mb-3">
-                    <label for="username" class="form-label">Username</label>
-                    <input type="text" class="form-control" id="username" name="username" required>
-                </div>
-
-                <div class="mb-3">
-                    <label for="password" class="form-label">Password</label>
-                    <input type="password" class="form-control" id="password" name="password" required>
-                </div>
-                {% endif %}
-
-                {% if show_2fa %}
-                <div class="mb-3">
-                    <label for="2fa_code" class="form-label">Two-Factor Authentication Code</label>
-                    <input type="text" class="form-control" id="2fa_code" name="2fa_code" required 
-                           placeholder="Enter the 6-digit code from your authenticator app"
-                           pattern="[0-9]{6}" maxlength="6">
-                    <input type="hidden" name="username" value="{{ session.get('temp_username', '') }}">
-                </div>
-                {% endif %}
-
-                <div class="d-grid gap-2">
-                    <button type="submit" class="btn btn-primary">
-                        {% if show_2fa %}Verify Code{% else %}Login{% endif %}
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
+					{% if not show_2fa %}
+					<div class="mb-3">
+						<label for="username">Username</label>
+						<input type="text" class="form-control" id="username" name="username" value="{{ username }}" required autofocus autocomplete="username">
+					</div>
+					<div class="mb-3">
+						<label for="password">Password</label>
+						<input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+					</div>
+					<button type="submit" class="btn btn-primary w-100">Log in</button>
+					{% else %}
+					<p class="small text-muted mb-3">Signed in as <strong>{{ username }}</strong>. Enter the 6-digit code from your authenticator app.</p>
+					<div class="mb-3">
+						<label for="2fa_code">Authentication code</label>
+						<input type="text" class="form-control text-center" id="2fa_code" name="2fa_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus autocomplete="one-time-code">
+					</div>
+					<button type="submit" class="btn btn-primary w-100">Verify</button>
+					<a href="{{ url_for('login') }}" class="btn btn-link w-100 btn-sm">Start over</a>
+					{% endif %}
+				</form>
+			</div>
+		</div>
+		<p class="text-center small text-muted mt-3">Accounts are managed by the site administrator.</p>
+	</div>
 </body>
 </html>

@@ -1,0 +1,137 @@
+{% extends "_admin_layout.html" %}
+{% from "_field_macros.html" import render_fields %}
+{% set is_new = mode == 'add' %}
+{% set template = templates[template_key] %}
+{% set is_published = page.status == 'published' %}
+{% block title %}{{ 'New page' if is_new else 'Edit page' }}{% endblock %}
+
+{% block content %}
+<form method="post" action="{{ url_for('add_page_route') if is_new else url_for('edit_page', slug=slug) }}" id="pageForm" autocomplete="off">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<input type="hidden" name="action" value="">
+
+	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+		<h1 class="h4 mb-2">{{ 'Add new page' if is_new else 'Edit page' }}
+			{% if not is_new %}<span class="badge text-bg-{{ 'success' if is_published else 'warning' }} status-pill align-middle">{{ 'Published' if is_published else 'Draft' }}</span>{% endif %}
+		</h1>
+		<div class="mb-2">
+			<a href="/admin" class="btn btn-sm btn-outline-secondary">Back to content</a>
+		</div>
+	</div>
+
+	{% if errors %}
+	<div class="alert alert-danger">
+		<strong>Please fix the following:</strong>
+		<ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+	</div>
+	{% endif %}
+
+	<div class="row">
+		<div class="col-xl-9">
+			<div class="mb-3">
+				<label for="titleInput" class="visually-hidden">Title</label>
+				<input type="text" id="titleInput" name="title" class="form-control editor-title" placeholder="Page title" value="{{ page.title or '' }}" required maxlength="255">
+			</div>
+
+			<div class="permalink-box mb-3">
+				<span>Permalink:</span>
+				<span>{{ request.host_url.rstrip('/') }}/</span><input type="text" id="slugInput" name="slug" class="form-control form-control-sm d-inline-block" value="{{ slug or '' }}" maxlength="255" aria-label="Permalink">
+				{% if not is_new and is_published %}
+				<a href="/{{ slug }}" target="_blank" rel="noopener" class="ms-2 small">View page</a>
+				{% endif %}
+			</div>
+
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>Content</strong></div>
+				<div class="card-body p-0">
+					<textarea id="editor" name="content" class="form-control js-editor border-0" rows="12">{{ page.content or '' }}</textarea>
+				</div>
+			</div>
+
+			{% if template.fields %}
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>{{ template.label }}</strong> <small class="text-muted">— custom fields for this page</small></div>
+				<div class="card-body">
+					{{ render_fields(template.fields, values) }}
+				</div>
+			</div>
+			{% endif %}
+
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>Search &amp; social description</strong></div>
+				<div class="card-body">
+					<textarea class="form-control" name="description" rows="2" maxlength="500" placeholder="A short summary shown in search results and link previews">{{ page.description or '' }}</textarea>
+				</div>
+			</div>
+		</div>
+
+		<aside class="col-xl-3">
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Publish</div>
+				<div class="card-body">
+					{% if not is_new %}
+					<p class="small text-muted mb-2">Status: <strong>{{ 'Published' if is_published else 'Draft' }}</strong></p>
+					{% endif %}
+					<div class="d-flex flex-wrap">
+						{% if is_published and not is_new %}
+						<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Update</button>
+						<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Switch to draft</button>
+						{% else %}
+						<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Publish</button>
+						<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Save draft</button>
+						{% endif %}
+					</div>
+					{% if not is_new %}
+					<a href="/page/preview/{{ slug }}" target="_blank" rel="noopener" class="btn btn-sm btn-link px-0">Preview saved version</a>
+					<div class="small text-muted mt-2">
+						Last saved: {{ (page.updated_at or '')|string|truncate(19, True, '') }}
+					</div>
+					{% endif %}
+				</div>
+			</div>
+
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Page template</div>
+				<div class="card-body">
+					<select name="template" class="form-select js-template-switch" aria-label="Page template">
+						{% for key, tpl in templates.items() %}
+						<option value="{{ key }}" {{ 'selected' if key == template_key }}>{{ tpl.label }}</option>
+						{% endfor %}
+					</select>
+					<small class="form-text text-muted">{{ template.description }}</small>
+					<small class="form-text text-muted">Changing the template reloads the form and keeps what you have typed.</small>
+				</div>
+			</div>
+
+			{% if not is_new %}
+			<div class="card mb-3 sidebar-card">
+				<div class="card-header bg-white">Danger zone</div>
+				<div class="card-body">
+					<button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePageModal">Delete page</button>
+				</div>
+			</div>
+			{% endif %}
+		</aside>
+	</div>
+</form>
+
+{% if not is_new %}
+<div class="modal fade" id="deletePageModal" tabindex="-1" role="dialog" aria-hidden="true">
+	<div class="modal-dialog" role="document"><div class="modal-content">
+		<div class="modal-header"><h5 class="modal-title">Delete this page?</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+		<div class="modal-body">This permanently removes <strong>{{ page.title }}</strong>. This cannot be undone.</div>
+		<div class="modal-footer">
+			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+			<form method="post" action="{{ url_for('delete_page_route', slug=slug) }}" class="d-inline">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+				<button type="submit" class="btn btn-danger">Delete</button>
+			</form>
+		</div>
+	</div></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% include "_editor_assets.html" %}
+{% endblock %}

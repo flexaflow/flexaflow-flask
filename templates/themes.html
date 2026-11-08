@@ -1,0 +1,39 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Themes{% endblock %}
+{% block content %}
+<h1 class="h3 mb-0">Themes</h1>
+<small class="text-muted">FlexaFlow {{ core_version }} · A theme controls how the public site looks. Upload one, then activate it.</small>
+{% if allow_upload %}
+<div class="card my-3"><div class="card-body">
+	<form method="post" action="/admin/themes/upload" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center">
+		<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+		<label class="me-2 fw-bold" for="themeFile">Upload theme</label>
+		<input type="file" id="themeFile" name="file" accept=".zip" class="form-control me-2" required>
+		<button class="btn btn-primary btn-sm">Upload &amp; install</button>
+	</form>
+	<div class="small text-muted mt-2">Themes contain templates and styles, and may contain Python helper functions, so install only themes you trust. Uploading a theme with the same name replaces it.</div>
+</div></div>
+{% endif %}
+<div class="row">
+{% for t in themes %}
+	<div class="col-lg-4 col-md-6 mb-3">
+		<div class="card h-100 {% if t.slug == active %}border-success{% endif %}"><div class="card-body d-flex flex-column">
+			<div class="d-flex justify-content-between"><h2 class="h5 mb-1">{{ t.name }}{% if t.version %} <small class="text-muted">v{{ t.version }}</small>{% endif %}</h2>
+			{% if t.slug == active %}<span class="badge text-bg-success align-self-start">Active</span>{% endif %}</div>
+			{% if t.author %}<div class="small text-muted">by {{ t.author }}</div>{% endif %}
+			<p class="mt-2">{{ t.description }}</p>
+			{% if t.extension %}<p class="small text-muted">Provided by the extension <code>{{ t.extension }}</code>.</p>{% endif %}
+			{% if not t.compatible %}<div class="alert alert-warning small">Needs FlexaFlow {{ t.requires_core }} or newer.</div>{% endif %}
+			<div class="mt-auto d-flex">
+				{% if t.slug != active and t.compatible %}
+				<form method="post" action="/admin/themes/{{ t.slug }}/activate" class="me-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success btn-sm">Activate</button></form>
+				{% endif %}
+				{% if t.slug != 'default' and t.slug != active and not t.extension %}
+				<form method="post" action="/admin/themes/{{ t.slug }}/delete" class="ms-auto" onsubmit="return confirm('Delete this theme?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-link text-danger btn-sm">Delete</button></form>
+				{% endif %}
+			</div>
+		</div></div>
+	</div>
+{% endfor %}
+</div>
+{% endblock %}

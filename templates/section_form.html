@@ -1,0 +1,146 @@
+{% extends "_admin_layout.html" %}
+{% block title %}{{ 'New section' if mode == 'add' else 'Edit section' }}{% endblock %}
+{% block content %}
+<form method="post" id="sectionForm" autocomplete="off">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<input type="hidden" name="fields_json" id="fieldsJson" value="">
+
+	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+		<h1 class="h4 mb-2">{{ 'Add a section' if mode == 'add' else 'Edit section' }}</h1>
+		<a href="{{ url_for('content.sections_index') }}" class="btn btn-sm btn-outline-secondary mb-2">Back to sections</a>
+	</div>
+
+	{% if errors %}
+	<div class="alert alert-danger"><strong>Please fix the following:</strong><ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+	{% endif %}
+
+	<div class="row">
+		<div class="col-lg-7">
+			<div class="card mb-3"><div class="card-body">
+				<div class="mb-3">
+					<label class="fw-bold" for="secName">Section name</label>
+					<input class="form-control" id="secName" name="name" value="{{ section.name }}" required maxlength="255" placeholder="Notices">
+					<small class="form-text text-muted">Shown as the page heading and in lists.</small>
+				</div>
+				<div class="mb-3">
+					<label class="fw-bold" for="secPath">Web address</label>
+					<div class="input-group">
+						<span class="input-group-text">{{ request.host_url.rstrip('/') }}/</span>
+						<input class="form-control" id="secPath" name="section_path" value="{{ section.section_path }}" required maxlength="64" pattern="[a-z0-9][a-z0-9\-]*" placeholder="notices">
+						<span class="input-group-text">/</span>
+					</div>
+					<small class="form-text text-muted">Lowercase letters, digits and hyphens. A post called “Exam routine” will be at <code>/<span id="pathPreview">{{ section.section_path or 'notices' }}</span>/exam-routine</code>.</small>
+				</div>
+				<div class="mb-3">
+					<label class="fw-bold" for="secSingular">Name of one item</label>
+					<input class="form-control" id="secSingular" name="singular_name" value="{{ section.singular_name }}" maxlength="100" placeholder="Notice">
+					<small class="form-text text-muted">Used on the button: “New <span id="singularPreview">{{ (section.singular_name or 'notice')|lower }}</span>”.</small>
+				</div>
+				<div class="mb-3">
+					<label class="fw-bold" for="secDesc">Short description</label>
+					<textarea class="form-control" id="secDesc" name="description" rows="2" maxlength="500">{{ section.description }}</textarea>
+					<small class="form-text text-muted">Shown under the heading on the section page.</small>
+				</div>
+				<div class="row g-2">
+					<div class="mb-3 col-md-7">
+						<label class="fw-bold" for="secDateLabel">Label of the date</label>
+						<input class="form-control" id="secDateLabel" name="date_label" value="{{ section.date_label }}" maxlength="60" placeholder="Date">
+						<small class="form-text text-muted">For example “Notice date” or “Event starts”.</small>
+					</div>
+					<div class="mb-3 col-md-5">
+						<label class="fw-bold d-block">Time of day</label>
+						<div class="form-check mt-2">
+							<input type="checkbox" class="form-check-input" id="secTime" name="show_time" value="1" {{ 'checked' if section.show_time }}>
+							<label class="form-check-label" for="secTime">Also ask for a time</label>
+						</div>
+					</div>
+				</div>
+			</div></div>
+		</div>
+
+		<div class="col-lg-5">
+			<div class="card mb-3">
+				<div class="card-header bg-white"><strong>Extra fields</strong> <small class="text-muted">asked for on every {{ (section.singular_name or 'item')|lower }}</small></div>
+				<div class="card-body">
+					<div id="fieldRows"></div>
+					<button type="button" class="btn btn-sm btn-outline-primary" id="addField">+ Add field</button>
+					<small class="form-text text-muted mt-2">Example: a notice number and a PDF attachment, or an event’s venue.</small>
+				</div>
+			</div>
+			<button type="submit" class="btn btn-primary w-100">{{ 'Create section' if mode == 'add' else 'Save section' }}</button>
+		</div>
+	</div>
+</form>
+
+<template id="fieldRowTpl">
+	<div class="card card-body mb-2 field-row">
+		<div class="row g-2">
+			<div class="col-7"><label class="small text-muted mb-0">Label</label><input class="form-control form-control-sm f-label" placeholder="Venue"></div>
+			<div class="col-5"><label class="small text-muted mb-0">Type</label>
+				<select class="form-select form-select-sm f-type">
+					<option value="text">Short text</option>
+					<option value="textarea">Long text</option>
+					<option value="file">File (PDF…)</option>
+					<option value="image">Image</option>
+					<option value="url">Link</option>
+					<option value="date">Date</option>
+					<option value="datetime">Date &amp; time</option>
+					<option value="number">Number</option>
+				</select>
+			</div>
+		</div>
+		<div class="row g-2 mt-2">
+			<div class="col-8"><label class="small text-muted mb-0">Help text (optional)</label><input class="form-control form-control-sm f-help"></div>
+			<div class="col-4 text-end"><label class="small d-block mb-0">&nbsp;</label><button type="button" class="btn btn-sm btn-link text-danger js-remove">Remove</button></div>
+		</div>
+		<input type="hidden" class="f-name">
+	</div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script id="initialFields" type="application/json">{{ section.fields_schema|tojson }}</script>
+<script>
+(function ($) {
+	function slug(t) { return (t || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'f_$1'); }
+	function addRow(f) {
+		var $row = $($('#fieldRowTpl').html());
+		f = f || {};
+		$row.find('.f-label').val(f.label || '');
+		$row.find('.f-type').val(f.type || 'text');
+		$row.find('.f-help').val(f.help || '');
+		$row.find('.f-name').val(f.name || '');
+		$('#fieldRows').append($row);
+	}
+	var initial = [];
+	try { initial = JSON.parse($('#initialFields').text()) || []; } catch (e) {}
+	initial.forEach(addRow);
+	$('#addField').on('click', function () { addRow(); });
+	$(document).on('click', '.js-remove', function () { $(this).closest('.field-row').remove(); });
+
+	$('#secPath').on('input', function () { $('#pathPreview').text(this.value || 'notices'); });
+	$('#secSingular').on('input', function () { $('#singularPreview').text((this.value || 'item').toLowerCase()); });
+	var pathEdited = !!$('#secPath').val(), singEdited = !!$('#secSingular').val();
+	$('#secPath').on('input', function () { pathEdited = true; });
+	$('#secSingular').on('input', function () { singEdited = true; });
+	$('#secName').on('input', function () {
+		if (!pathEdited) { $('#secPath').val(this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')).trigger('input'); pathEdited = false; }
+		if (!singEdited) { $('#secSingular').val(this.value.replace(/s$/i, '')).trigger('input'); singEdited = false; }
+	});
+
+	$('#sectionForm').on('submit', function () {
+		var used = {}, fields = [];
+		$('#fieldRows .field-row').each(function () {
+			var label = $(this).find('.f-label').val().trim();
+			if (!label) { return; }
+			var name = $(this).find('.f-name').val() || slug(label) || 'field';
+			var base = name, i = 2;
+			while (used[name]) { name = base + '_' + i++; }
+			used[name] = true;
+			fields.push({name: name, label: label, type: $(this).find('.f-type').val(), help: $(this).find('.f-help').val().trim()});
+		});
+		$('#fieldsJson').val(JSON.stringify(fields));
+	});
+})(window.jQuery);
+</script>
+{% endblock %}

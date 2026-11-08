@@ -22,10 +22,10 @@
         <div class="post-meta">
             <span><i class="far fa-calendar"></i> {{ post.created_at|truncate(10, true, '') }}</span>
             {% if post.author %}
-            <span class="ml-3"><i class="far fa-user"></i> {{ post.author }}</span>
+            <span class="ms-3"><i class="far fa-user"></i> {{ post.author }}</span>
             {% endif %}
             {% if post.category %}
-            <span class="ml-3"><i class="far fa-folder"></i>
+            <span class="ms-3"><i class="far fa-folder"></i>
                 <a href="/category/{{ post.category.slug }}" class="text-muted">
                     {{ post.category.name }}
                 </a>
@@ -33,13 +33,14 @@
             {% endif %}
         </div>
         <div class="post-excerpt">{{ post.description }}</div>
-        <a href="/post/{{ post.slug }}" class="read-more">Read More <i class="fas fa-arrow-right ml-1"></i></a>
+        <a href="/post/{{ post.slug }}" class="read-more">Read More <i class="fas fa-arrow-right ms-1"></i></a>
     </article>
     {% endfor %}
     {% else %}
     <div class="alert alert-info">
-        <i class="fas fa-info-circle mr-2"></i> No posts found with this tag.
+        <i class="fas fa-info-circle me-2"></i> No posts found with this tag.
     </div>
     {% endif %}
 </div>
+{% include "main/pager.html" %}
 {% endblock %}

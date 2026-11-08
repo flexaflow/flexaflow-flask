@@ -1,145 +1,131 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Admin Dashboard</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
-            <div>
-                <a href="/admin/settings" class="btn btn-outline-light mr-2">Site Settings</a>
-                <a href="/admin/menu" class="btn btn-outline-light mr-2">Menu Editor</a>
-                <a href="/" class="btn btn-outline-light mr-2">View Site</a>
-                <a href="/logout" class="btn btn-outline-light mr-2">Logout</a>
-            </div>
-        </div>
-    </nav>
+{% extends "_admin_layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% set show_pages_tab = can('manage_pages') %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-2">Dashboard</h1>
+	<div class="mb-2">
+		{% if show_pages_tab %}<a class="btn btn-outline-primary me-2" href="{{ url_for('add_page_route') }}">Add page</a>{% endif %}
+		{% if can('create_posts') %}<a class="btn btn-outline-primary" href="{{ url_for('add_post_route') }}">Add post</a>{% endif %}
+	</div>
+</div>
 
-    <div class="container mt-4">
-        <!-- Export/Import Buttons -->
-        <div class="mb-4 d-flex justify-content-end">
-            <a href="{{ url_for('export_content') }}" class="btn btn-success mr-2">Export as XML</a>
-            <a href="{{ url_for('import_content') }}" class="btn btn-info">Import from XML</a>
-        </div>
+{% if can('create_posts') and nav_sections %}
+<div class="row mb-3">
+	{% for s in nav_sections %}
+	<div class="col-sm-6 col-lg-3 mb-3">
+		<div class="card h-100"><div class="card-body d-flex flex-column">
+			<div class="d-flex justify-content-between"><strong>{{ s.name }}</strong><span class="badge text-bg-light border align-self-start">{{ s.post_count }}</span></div>
+			<a href="/{{ s.section_path }}/" target="_blank" rel="noopener" class="small mb-3"><code>/{{ s.section_path }}/</code></a>
+			<a class="btn btn-primary btn-sm mt-auto" href="/post/add?section={{ s.section_path }}">+ New {{ (s.singular_name or s.name)|lower }}</a>
+		</div></div>
+	</div>
+	{% endfor %}
+	{% if can('manage_people') %}
+	{% for k, cfg in ENTRY_KINDS.items() %}
+	<div class="col-sm-6 col-lg-3 mb-3">
+		<div class="card h-100"><div class="card-body d-flex flex-column">
+			<strong>{{ cfg.label }}</strong>
+			<a href="{{ cfg.base_path }}" target="_blank" rel="noopener" class="small mb-3"><code>{{ cfg.base_path }}</code></a>
+			<a class="btn btn-outline-primary btn-sm mt-auto" href="/admin/people/{{ k }}">Edit {{ cfg.label|lower }}</a>
+		</div></div>
+	</div>
+	{% endfor %}
+	{% endif %}
+</div>
+{% endif %}
 
-        <ul class="nav nav-tabs mb-4">
-            <li class="nav-item">
-                <a class="nav-link active" href="#pages" data-toggle="tab">Pages</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#posts" data-toggle="tab">Posts</a>
-            </li>
-        </ul>
+{{ hook("admin_dashboard") }}
 
-        <div class="tab-content">
-            <div class="tab-pane fade show active" id="pages">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h2>Pages</h2>
-                    <a href="/page/add" class="btn btn-primary">Add New Page</a>
-                </div>
-                
-                <div class="card mt-4">
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Title</th>
-                                        <th>Slug</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for page in pages %}
-                                    <tr>
-                                        <td>
-                                            {{ page.title }}
-                                            {% if page.get('status') == 'draft' %}
-                                            <span class="badge badge-warning">Draft</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ page.slug }}</td>
-                                        <td>
-                                            <span class="badge badge-{{ 'success' if page.get('status') == 'published' else 'warning' }}">
-                                                {{ page.get('status', 'draft').title() }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="btn-group">
-                                                <a href="/page/edit/{{ page.slug }}" class="btn btn-sm btn-info">Edit</a>
-                                                <a href="/page/preview/{{ page.slug }}" class="btn btn-sm btn-secondary" target="_blank">Preview</a>
-                                                <a href="/page/delete/{{ page.slug }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this page?')">Delete</a>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<ul class="nav nav-tabs mb-3">
+	{% if show_pages_tab %}
+	<li class="nav-item"><a class="nav-link {{ 'active' if post_page == 1 else '' }}" data-bs-toggle="tab" href="#pagesTab">Pages <span class="badge text-bg-light border">{{ pages|length }}</span></a></li>
+	{% endif %}
+	<li class="nav-item"><a class="nav-link {{ '' if (show_pages_tab and post_page == 1) else 'active' }}" data-bs-toggle="tab" href="#postsTab">Posts <span class="badge text-bg-light border">{{ posts|length }}</span></a></li>
+	<li class="nav-item ms-auto"><a class="nav-link" href="/admin/posts">Search, filter &amp; bulk edit all posts &rarr;</a></li>
+</ul>
 
-            <div class="tab-pane fade" id="posts">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h2>Posts</h2>
-                    <a href="/post/add" class="btn btn-primary">Add New Post</a>
-                </div>
-                
-                <div class="card mt-4">
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Title</th>
-                                        <th>Author</th>
-                                        <th>Category</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for post in posts %}
-                                    <tr>
-                                        <td>
-                                            {{ post.title }}
-                                            {% if post.get('status') == 'draft' %}
-                                            <span class="badge badge-warning">Draft</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ post.get('author', 'Admin') }}</td>
-                                        <td>{% if post.get('category') is mapping %}{{ post.get('category').name }}{% else %}{{ post.get('category', 'Uncategorized') }}{% endif %}</td>
-                                        <td>
-                                            <span class="badge badge-{{ 'success' if post.get('status') == 'published' else 'warning' }}">
-                                                {{ post.get('status', 'draft').title() }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="btn-group">
-                                                <a href="/post/edit/{{ post.slug }}" class="btn btn-sm btn-info">Edit</a>
-                                                <a href="/post/{{ post.slug }}" class="btn btn-sm btn-secondary" target="_blank">View</a>
-                                                <a href="/post/delete/{{ post.slug }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this post?')">Delete</a>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<div class="tab-content">
+	{% if show_pages_tab %}
+	<div class="tab-pane fade {{ 'show active' if post_page == 1 else '' }}" id="pagesTab">
+		<input type="search" class="form-control mb-2" id="pageFilter" placeholder="Search pages by title or address…" aria-label="Search pages">
+		<div class="card"><div class="card-body p-0">
+			<table class="table table-hover mb-0">
+				<thead class="table-light"><tr><th>Title</th><th>Address</th><th>Template</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+				<tbody>
+				{% for p in pages|sort(attribute='title') %}
+					<tr class="page-row">
+						<td><a href="{{ url_for('edit_page', slug=p.slug) }}">{{ p.title }}</a></td>
+						<td><code>/{{ p.slug }}</code></td>
+						<td class="small">{{ page_templates[p.template].label if p.template in page_templates else 'Default page' }}</td>
+						<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
+						<td class="small text-muted">{{ (p.updated_at or '')|string|truncate(16, True, '') }}</td>
+						<td class="actions text-end">
+							<a href="{{ url_for('edit_page', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+							<a href="/page/preview/{{ p.slug }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Preview</a>
+							<form method="post" action="{{ url_for('delete_page_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this page permanently?');">
+								<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+								<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+							</form>
+						</td>
+					</tr>
+				{% else %}
+					<tr><td colspan="6" class="text-muted text-center py-4">No pages yet.</td></tr>
+				{% endfor %}
+				</tbody>
+			</table>
+		</div></div>
+	</div>
+	{% endif %}
 
-    <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-    <script src="/static/bootstrap-and-related/popper.min.js"></script>
-    <script src="/static/bootstrap-and-related/bootstrap.min.js"></script>
-</body>
-</html>
+	<div class="tab-pane fade {{ '' if (show_pages_tab and post_page == 1) else 'show active' }}" id="postsTab">
+		<div class="card"><div class="card-body p-0">
+			<table class="table table-hover mb-0">
+				<thead class="table-light"><tr><th>Title</th><th>Author</th><th>Section / category</th><th>Status</th><th>Date</th><th></th></tr></thead>
+				<tbody>
+				{% for p in post_rows %}
+					{% set author = users_by_id.get(p.author_id) %}
+					<tr>
+						<td><a href="{{ url_for('edit_post', slug=p.slug) }}">{{ p.title }}</a></td>
+						<td class="small">{{ (author.display_name if author else 'Unknown') }}</td>
+						<td class="small">{{ p.category.name if p.category else '—' }}{% if p.category and p.category.section_path %} <code>/{{ p.category.section_path }}/</code>{% endif %}</td>
+						<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
+						<td class="small text-muted">{{ (p.published_at or p.created_at or '')|string|truncate(10, True, '') }}</td>
+						<td class="actions text-end">
+							<a href="{{ url_for('edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+							{% if p.status == 'published' %}<a href="{{ p.public_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>{% endif %}
+							{% if can('edit_others_content') or p.author_id == current_user.id %}
+							<form method="post" action="{{ url_for('delete_post_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this post permanently?');">
+								<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+								<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+							</form>
+							{% endif %}
+						</td>
+					</tr>
+				{% else %}
+					<tr><td colspan="6" class="text-muted text-center py-4">No posts yet.</td></tr>
+				{% endfor %}
+				</tbody>
+			</table>
+			{% if post_pages > 1 %}
+			<nav class="d-flex flex-wrap justify-content-between align-items-center p-3 border-top" aria-label="Posts pages">
+				{% if post_page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="/admin?ppage={{ post_page - 1 }}#postsTab">&larr; Previous</a>{% else %}<span></span>{% endif %}
+				<span class="small text-muted">Page {{ post_page }} of {{ post_pages }} &middot; {{ posts|length }} posts &middot; <a href="/admin/posts">Search &amp; filter all</a></span>
+				{% if post_page < post_pages %}<a class="btn btn-sm btn-outline-secondary" href="/admin?ppage={{ post_page + 1 }}#postsTab">Next &rarr;</a>{% else %}<span></span>{% endif %}
+			</nav>
+			{% endif %}
+			</div></div>
+	</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function ($) {
+	$('#pageFilter').on('input', function () {
+		var q = this.value.toLowerCase().trim();
+		$('.page-row').each(function () { $(this).toggle(!q || $(this).text().toLowerCase().indexOf(q) !== -1); });
+	});
+})(window.jQuery);
+</script>
+{% endblock %}
