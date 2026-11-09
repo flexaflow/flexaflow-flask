@@ -53,9 +53,15 @@ Set these in `.env` or the environment.
 | `LOG_LEVEL` | `INFO` | Python log level. |
 | `PORT`, `HOST` | `5000`, `127.0.0.1` | Used by `server.py`. |
 
+
 ## Screenshots
 
-Add yours to `docs/screenshots/` and link them here.
+![Admin Panel](docs/screenshots/Screenshot_admin_panel.png)
+
+
+
+
+
 
 ## Scheduled publishing
 
