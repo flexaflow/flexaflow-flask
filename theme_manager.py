@@ -57,7 +57,9 @@ def list_themes() -> List[Dict[str, Any]]:
 		for name in sorted(os.listdir(THEMES_DIR)):
 			folder = os.path.join(THEMES_DIR, name)
 			if os.path.isdir(os.path.join(folder, "templates")):
-				themes.append(read_theme(folder, name))
+				info = read_theme(folder, name)
+				info["digest"] = em.folder_digest(folder)
+				themes.append(info)
 	return themes
 
 

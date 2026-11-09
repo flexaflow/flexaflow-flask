@@ -1,0 +1,30 @@
+{% extends "main/master.html" %}
+{% block title %}{{ item.title }} · {{ section.name }} · {{ settings.site_title }}{% endblock %}
+{% block content %}
+<nav class="small text-muted mb-2"><a href="/">Home</a> / <a href="/{{ section.section_path }}/">{{ section.name }}</a></nav>
+<article class="blog-post">
+	<h1>{{ item.title }}</h1>
+	<p class="text-muted">{{ item.published_at | pretty_date(section.show_time) }}</p>
+	{% if item.cover_image %}<img src="{{ item.cover_image }}" alt="" class="img-fluid rounded mb-4">{% endif %}
+	<div>{{ item.content | safe }}</div>
+	{% set shown = section.fields_schema | selectattr('name', 'in', item.meta.keys()) | list %}
+	{% if shown %}
+	<dl class="mt-4 border-top pt-3">
+		{% for f in shown if item.meta[f.name] %}
+		<dt>{{ f.label }}</dt>
+		<dd>
+			{% set v = item.meta[f.name] %}
+			{% if f.type == 'file' %}<a href="{{ v }}" target="_blank" rel="noopener">Download</a>
+			{% elif f.type == 'image' %}<img src="{{ v }}" alt="{{ f.label }}" class="img-fluid">
+			{% elif f.type == 'url' %}<a href="{{ v }}" target="_blank" rel="noopener">{{ v }}</a>
+			{% elif f.type == 'datetime' %}{{ v | pretty_date(true) }}
+			{% elif f.type == 'date' %}{{ v | pretty_date }}
+			{% else %}{{ v }}{% endif %}
+		</dd>
+		{% endfor %}
+	</dl>
+	{% endif %}
+	{% if item.tags %}<p>{% for tag in item.tags %}<a href="/tag/{{ tag }}" class="badge text-bg-light border">{{ tag }}</a> {% endfor %}</p>{% endif %}
+	<p class="mt-4"><a href="/{{ section.section_path }}/">&larr; Back to {{ section.name }}</a></p>
+</article>
+{% endblock %}

@@ -21,12 +21,13 @@
 			<div class="d-flex justify-content-between"><h2 class="h5 mb-1">{{ t.name }}{% if t.version %} <small class="text-muted">v{{ t.version }}</small>{% endif %}</h2>
 			{% if t.slug == active %}<span class="badge text-bg-success align-self-start">Active</span>{% endif %}</div>
 			{% if t.author %}<div class="small text-muted">by {{ t.author }}</div>{% endif %}
+			{% if t.digest %}<div class="small text-muted" title="Compare with the value the author publishes">SHA-256 <code>{{ t.digest[:16] }}…</code></div>{% endif %}
 			<p class="mt-2">{{ t.description }}</p>
 			{% if t.extension %}<p class="small text-muted">Provided by the extension <code>{{ t.extension }}</code>.</p>{% endif %}
 			{% if not t.compatible %}<div class="alert alert-warning small">Needs FlexaFlow {{ t.requires_core }} or newer.</div>{% endif %}
 			<div class="mt-auto d-flex">
 				{% if t.slug != active and t.compatible %}
-				<form method="post" action="/admin/themes/{{ t.slug }}/activate" class="me-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success btn-sm">Activate</button></form>
+				<form method="post" action="/admin/themes/{{ t.slug }}/activate" class="me-2" onsubmit="return confirm('Themes can contain Python (functions/*.py) that runs on this server with full access to the site.\n\nActivate only a theme you wrote or trust.\n\nSHA-256: {{ t.digest }}')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success btn-sm">Activate</button></form>
 				{% endif %}
 				{% if t.slug != 'default' and t.slug != active and not t.extension %}
 				<form method="post" action="/admin/themes/{{ t.slug }}/delete" class="ms-auto" onsubmit="return confirm('Delete this theme?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-link text-danger btn-sm">Delete</button></form>

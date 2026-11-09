@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
 	<h1 class="h4 mb-0">Users</h1>
-	<a href="{{ url_for('user_new') }}" class="btn btn-primary">Add user</a>
+	<a href="{{ url_for('auth.user_new') }}" class="btn btn-primary">Add user</a>
 </div>
 
 <div class="card mb-4">
@@ -32,7 +32,7 @@
 					<td>{{ 'On' if u.two_fa_enabled else 'Off' }}</td>
 					<td class="small text-muted">{{ (u.last_login_at or 'never')|string|truncate(16, True, '') }}</td>
 					<td class="actions text-end">
-						<a href="{{ url_for('user_edit', user_id=u.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+						<a href="{{ url_for('auth.user_edit', user_id=u.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
 						{% if u.id != current_user.id %}
 						<button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteUser{{ u.id }}">Delete</button>
 						<div class="modal fade" id="deleteUser{{ u.id }}" tabindex="-1" role="dialog" aria-hidden="true">
@@ -41,7 +41,7 @@
 								<div class="modal-body text-start">Their pages and posts will be assigned to you. This cannot be undone.</div>
 								<div class="modal-footer">
 									<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-									<form method="post" action="{{ url_for('user_delete', user_id=u.id) }}" class="d-inline">
+									<form method="post" action="{{ url_for('auth.user_delete', user_id=u.id) }}" class="d-inline">
 										<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 										<button type="submit" class="btn btn-danger">Delete user</button>
 									</form>

@@ -1,0 +1,8 @@
+{
+  "name": "Backups",
+  "slug": "backups",
+  "version": "1.0.0",
+  "description": "Create and download full-site backup packages (content, settings, extension data, media) from the admin. Keeps the newest ten in instance/backups.",
+  "author": "FlexaFlow",
+  "requires_core": "1.1.0"
+}

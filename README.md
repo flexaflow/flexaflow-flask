@@ -1,90 +1,85 @@
-## More testing required before production level
-
-
 # FlexaFlow CMS
 
+A small, hackable content management system for Flask. Pages, posts, sections, menus, media, multi-user roles,
+themes and extensions, with a WordPress-style admin.
 
+- **Content**: pages and posts with a TinyMCE editor, drafts, scheduled publishing, revisions with restore, autosave, an approval queue, comments with moderation, per-page SEO fields, RSS/Atom feeds, redirects.
+- **People**: four roles (administrator, editor, author, contributor), per-user two-factor authentication with recovery codes.
+- **Site**: themes, page templates with custom fields, extensions, WordPress/Blogger import and export, full-site export/import, contact form with inbox.
+- **Operations**: Alembic migrations, `/healthz`, response caching, Docker image, tests and CI.
 
+> Status: version 1.1.x. It has a test suite, but review the [security notes](docs/SECURITY.md) and test your own setup before exposing it to the internet.
 
+## Quick start
 
-
-</div>
-
-- **2FA Security**: Two-factor authentication, CSRF protection, and more
-- **Analytics**: Built-in support for Google Analytics and custom tracking
-
-
-### Content Management
-- **Pages & Posts**
-  - Create and manage static pages and dynamic blog posts
-  - Draft system with preview functionality
-  
-- **Rich Content Editor**
-  - TinyMCE integration with custom plugins
-
-### Media Management
-  - Image optimization
-  - Automatic thumbnail generation
-  
-
-### Security Features
-- **Two-Factor Authentication (2FA) ..Google Authenticator supports**
-
-
-
-
-
-
-## Theming
-
-
-# Current default theme structure
-```
-├── functions
-│   └── custom-function.py
-└── templates
-    ├── 404.html
-    ├── category.html
-    ├── main
-    │   ├── contact-form.html
-    │   ├── footer.html
-    │   ├── header.html
-    │   └── master.html
-    ├── post.html
-    ├── search.html
-    ├── single-page.html
-    └── tag.html
-
+```bash
+git clone https://github.com/flexaflow/flexaflow-flask.git
+cd flexaflow-flask
+python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                                    # then edit it
+python manage.py createsuperuser                        # the first administrator is created here, never on the web
+python server.py                                        # http://127.0.0.1:5000  (admin at /login)
 ```
 
+With Docker:
 
+```bash
+cp .env.example .env        # set SECRET_KEY
+docker compose up -d --build
+docker compose exec flexaflow python manage.py createsuperuser
+```
 
+For a real deployment (gunicorn, nginx, HTTPS, backups, upgrades) read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## License
+## Configuration
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Set these in `.env` or the environment.
 
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | generated into `instance/secret_key` | Signs sessions. Set it explicitly in production. |
+| `DATABASE_URL` | `sqlite:///cms.db` | SQLAlchemy URL. MySQL is supported with `FLASK_ENV=production`. |
+| `SESSION_COOKIE_SECURE` | `0` | Set `1` behind HTTPS (secure cookies and HSTS). |
+| `FLEXAFLOW_BEHIND_PROXY` | `0` | Set `1` behind nginx or a load balancer to trust `X-Forwarded-*`. |
+| `FLEXAFLOW_2FA_KEY` | generated into `instance/twofa.key` | Fernet key that encrypts 2FA secrets. Keep it apart from database backups. |
+| `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD` | `1` | `0` turns off extension and theme zip uploads in the browser. |
+| `CACHE_TYPE` | `FileSystemCache` | `SimpleCache`, `FileSystemCache`, `RedisCache` or `NullCache` (see docs/DEPLOYMENT.md). |
+| `CACHE_REDIS_URL` | empty | Used with `CACHE_TYPE=RedisCache`. |
+| `CACHE_TIMEOUT` | `300` | Seconds a cached public page may be reused. |
+| `FLEXAFLOW_IMAGE_FORMATS` | `webp` | Extra formats generated for uploaded images (`webp`, `avif`; skipped if Pillow lacks support). |
+| `STATIC_MAX_AGE` | `86400` | Cache lifetime for static files, in seconds. Uploads are cached for 30 days. |
+| `FLEXAFLOW_UPLOAD_DIR` | `uploads` | Where uploaded files are stored. |
+| `LOG_LEVEL` | `INFO` | Python log level. |
+| `PORT`, `HOST` | `5000`, `127.0.0.1` | Used by `server.py`. |
 
-## Acknowledgments
+## Screenshots
 
-###
-- [Mashiur Rahman](https://github.com/01one)
+Add yours to `docs/screenshots/` and link them here.
 
-### Structure Made with
-- [Flask](https://flask.palletsprojects.com/)
-- [SQLAlchemy](https://www.sqlalchemy.org/)
-- [TinyMCE](https://www.tiny.cloud/)
-- [Bootstrap](https://getbootstrap.com/)
+## Scheduled publishing
 
+Scheduled posts are published the first time any request arrives after their time (checked at most every 30 seconds per process). On a quiet site, or to be exact, run `python manage.py publish-due` from cron every minute.
 
+## Notes
 
+- Public pages are cached only for anonymous visitors. A page that prints a CSRF token (the contact form, and post pages when comments are on) is never cached.
+- Comments are off by default; turn them on under Site > Email, SEO & comments. They wait for approval.
+- Add `{{ seo_head() }}` to the `<head>` of your own theme to get titles, canonical links, Open Graph tags, the feed link and JSON-LD. Wrap post or page body output in `|responsive` for srcset, lazy loading and WebP.
 
+## Backup and upgrade
 
----
+Back up three things: the database (`DATABASE_URL`; for SQLite the `.db` file), the `uploads/` folder, and `instance/` (secret key and 2FA key). **Site > Export** also produces a content-only package.
 
-<div align="center">
-</div>
+To upgrade: back up, pull the new code, `pip install -r requirements.txt`, restart. Database migrations run automatically at startup; `python manage.py db-upgrade` runs them by hand and `db-current` shows the revision.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check .
+```
 
 ## Accounts (multi-user, role based)
 
@@ -186,12 +181,9 @@ cards can be reordered, hidden as drafts, deleted, imported from and exported to
 The active theme can provide page templates with custom fields (the BRIU CSE theme adds *Department landing*,
 *Academic program* and *Documents* pages). They are listed under **Pages > + New ...** in the admin menu.
 
-## Security notes
+## Security
 
-- Every POST/PUT/DELETE requires a CSRF token (form field or `X-CSRF-Token` header; `static/admin/admin.js` adds it to admin fetch calls).
-- Deletes are POST-only.
-- Login locks a username for 15 minutes after 5 failed attempts. Two-factor authentication is per user.
-- Sessions use `SECRET_KEY` from the environment, or a key stored in `instance/secret_key`. Set `SESSION_COOKIE_SECURE=1` when serving over HTTPS.
+See [docs/SECURITY.md](docs/SECURITY.md) for the full list. In short: CSRF on every state-changing request, editor HTML sanitized on save, per-IP and per-username login throttling stored in the database, encrypted 2FA secrets with recovery codes, security headers, and a security event log.
 
 ### Switching theme
 
@@ -230,3 +222,13 @@ python manage.py export-blogger blogger.xml --base-url https://example.com
 ```
 
 Options: `--conflict skip|rename|update`, `--no-drafts`, `--no-pages`, `--settings`, `--menu`, `--download-media`.
+
+## License
+
+FlexaFlow is released under the GNU General Public License v2.0. See `LICENSE`.
+
+## Acknowledgments
+
+- [Mashiur Rahman](https://github.com/01one)
+- Built with [Flask](https://flask.palletsprojects.com/), [SQLAlchemy](https://www.sqlalchemy.org/), [Alembic](https://alembic.sqlalchemy.org/), [TinyMCE](https://www.tiny.cloud/) and [Bootstrap](https://getbootstrap.com/).
+

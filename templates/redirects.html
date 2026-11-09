@@ -1,0 +1,18 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Redirects{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Redirects</h1>
+<p class="text-muted">Visitors who open an old address are sent to the new one. Changing a page's permalink adds one automatically.</p>
+<form method="post" class="row g-2 mb-4">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<div class="col-md-4"><input name="source" class="form-control" placeholder="/old-address" required></div>
+	<div class="col-md-5"><input name="target" class="form-control" placeholder="/new-address or https://…" required></div>
+	<div class="col-md-2 pt-2"><label><input type="checkbox" name="permanent" checked> Permanent (301)</label></div>
+	<div class="col-md-1"><button class="btn btn-primary w-100">Add</button></div>
+</form>
+<table class="table"><thead><tr><th>From</th><th>To</th><th>Hits</th><th></th></tr></thead><tbody>
+{% for r in redirects %}<tr><td><code>{{ r.source }}</code></td><td><code>{{ r.target }}</code></td><td>{{ r.hits }}</td>
+<td class="text-end"><form method="post" action="{{ url_for('features.redirect_delete', rid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="text-muted">No redirects.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

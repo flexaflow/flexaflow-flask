@@ -1,0 +1,25 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Packages{% endblock %}
+{% block content %}
+<h1 class="h4 mb-1">Packages</h1>
+<p class="text-muted">Extensions and themes from this server's <code>packages/index.json</code>. Installing checks the file's SHA-256 against the index. It does not activate anything: extensions and themes run Python code, so read the warning on their own screen first.</p>
+<div class="row g-3">
+{% for p in packages %}
+	<div class="col-md-6"><div class="card h-100"><div class="card-body">
+		<div class="d-flex justify-content-between"><h2 class="h6 mb-1">{{ p.name }}</h2><span class="badge text-bg-light">{{ p.kind }}</span></div>
+		<div class="small text-muted mb-2">v{{ p.version }}{% if p.author %} · {{ p.author }}{% endif %}{% if p.requires_core %} · needs FlexaFlow {{ p.requires_core }}+{% endif %}</div>
+		<p class="small">{{ p.description }}</p>
+		<div class="small text-muted mb-2">SHA-256 <code>{{ p.sha256[:16] }}…</code></div>
+		{% if not p.compatible %}<span class="text-danger small">Needs a newer FlexaFlow.</span>
+		{% elif p.state == 'installed' %}<span class="text-success small">Installed (v{{ p.installed_version }}).</span>
+		{% else %}
+		<form method="post" action="{{ url_for('packages_install') }}">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<input type="hidden" name="slug" value="{{ p.slug }}"><input type="hidden" name="kind" value="{{ p.kind }}">
+			<button class="btn btn-sm btn-primary">{{ 'Update from v' ~ p.installed_version if p.state == 'update' else 'Install' }}</button>
+		</form>
+		{% endif %}
+	</div></div></div>
+{% else %}<p class="text-muted">No packages are listed. Run <code>python tools/build_packages.py</code>.</p>{% endfor %}
+</div>
+{% endblock %}

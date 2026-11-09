@@ -1,0 +1,20 @@
+{% extends "main/master.html" %}
+{% block title %}{{ title }} · {{ settings.site_title }}{% endblock %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+{% for label, members in grouped %}
+	{% if grouped|length > 1 %}<h2 class="h4 mt-4 mb-3 border-bottom pb-2">{{ label }}</h2>{% endif %}
+	<div class="row">
+	{% for m in members %}
+		<div class="col-md-6 col-lg-4 mb-3">
+			<a href="{{ cfg.base_path }}{{ m.slug }}" class="d-flex align-items-center border rounded p-3 h-100 text-dark text-decoration-none">
+				{% if m.photo %}<img src="{{ m.photo }}" alt="" width="72" height="72" class="rounded-circle me-3" style="object-fit:cover">{% endif %}
+				<div class="flex-grow-1"><strong>{{ m.name }}</strong><br><small class="text-muted">{{ m.title }}</small></div>
+			</a>
+		</div>
+	{% endfor %}
+	</div>
+{% else %}
+<div class="alert alert-info">No profiles to show here yet.</div>
+{% endfor %}
+{% endblock %}

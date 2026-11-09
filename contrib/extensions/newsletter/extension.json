@@ -1,0 +1,12 @@
+{
+  "name": "Newsletter signup",
+  "slug": "newsletter",
+  "version": "1.0.0",
+  "description": "A public signup form at /newsletter/ with a subscriber list and CSV export in the admin. Subscribers are included in site exports.",
+  "author": "FlexaFlow",
+  "requires_core": "1.1.0",
+  "settings": [
+    {"name": "heading", "label": "Heading", "type": "text", "default": "Join our newsletter"},
+    {"name": "intro", "label": "Intro text", "type": "textarea", "default": "Occasional updates. No spam."}
+  ]
+}

@@ -1,0 +1,30 @@
+{% extends "_admin_layout.html" %}
+{% block title %}History{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-0">History: {{ obj.title }}</h1>
+	<a href="{{ edit_url }}" class="btn btn-outline-secondary btn-sm">Back to editor</a>
+</div>
+<div class="card"><div class="card-body p-0">
+<table class="table table-hover mb-0">
+	<thead class="table-light"><tr><th>Saved (UTC)</th><th>By</th><th>Title</th><th></th></tr></thead>
+	<tbody>
+	{% for r in revisions %}
+	<tr>
+		<td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+		<td>{{ names.get(r.author_id, 'unknown') }}</td>
+		<td>{{ r.title }}</td>
+		<td class="text-end">
+			<a class="btn btn-sm btn-outline-primary" href="{{ url_for('features.revision_view', rev_id=r.id) }}">Compare</a>
+			<form method="post" action="{{ url_for('features.revision_restore', rev_id=r.id) }}" class="d-inline" onsubmit="return confirm('Restore this version? The current one stays in the history.')">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+				<button class="btn btn-sm btn-outline-secondary">Restore</button>
+			</form>
+		</td>
+	</tr>
+	{% else %}
+	<tr><td colspan="4" class="text-muted p-3">No earlier versions yet. A version is saved each time you change the title or content.</td></tr>
+	{% endfor %}
+	</tbody>
+</table></div></div>
+{% endblock %}

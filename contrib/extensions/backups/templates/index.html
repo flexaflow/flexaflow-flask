@@ -1,0 +1,12 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Backups{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Site backups</h1>
+<p class="text-muted">A backup holds content, settings, extension data and uploaded media. Keep copies somewhere other than this server. The newest {{ keep }} are kept here.
+Back up <code>instance/</code> (secret keys) separately; it is not included.</p>
+<form method="post" action="/admin/ext/backups/create" class="mb-4"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary">Create backup now</button></form>
+<table class="table"><thead><tr><th>File</th><th>Created (UTC)</th><th>Size</th></tr></thead><tbody>
+{% for b in backups %}<tr><td><a href="/admin/ext/backups/download/{{ b.name }}">{{ b.name }}</a></td><td>{{ b.when }}</td><td>{{ b.size_mb }} MB</td></tr>
+{% else %}<tr><td colspan="3" class="text-muted">No backups yet.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

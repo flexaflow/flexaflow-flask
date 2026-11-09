@@ -6,7 +6,7 @@
 {% block title %}{{ 'New page' if is_new else 'Edit page' }}{% endblock %}
 
 {% block content %}
-<form method="post" action="{{ url_for('add_page_route') if is_new else url_for('edit_page', slug=slug) }}" id="pageForm" autocomplete="off">
+<form method="post" action="{{ url_for('editor.add_page_route') if is_new else url_for('editor.edit_page', slug=slug) }}" id="pageForm" autocomplete="off">
 	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 	<input type="hidden" name="action" value="">
 
@@ -81,6 +81,7 @@
 						<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Save draft</button>
 						{% endif %}
 					</div>
+{% with kind='page', obj=page, can_publish=True %}{% include '_publish_extras.html' %}{% endwith %}
 					{% if not is_new %}
 					<a href="/page/preview/{{ slug }}" target="_blank" rel="noopener" class="btn btn-sm btn-link px-0">Preview saved version</a>
 					<div class="small text-muted mt-2">
@@ -122,7 +123,7 @@
 		<div class="modal-body">This permanently removes <strong>{{ page.title }}</strong>. This cannot be undone.</div>
 		<div class="modal-footer">
 			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-			<form method="post" action="{{ url_for('delete_page_route', slug=slug) }}" class="d-inline">
+			<form method="post" action="{{ url_for('editor.delete_page_route', slug=slug) }}" class="d-inline">
 				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 				<button type="submit" class="btn btn-danger">Delete</button>
 			</form>

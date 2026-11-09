@@ -1,0 +1,8 @@
+{
+  "name": "Minimal",
+  "slug": "minimal",
+  "version": "1.0.0",
+  "author": "FlexaFlow",
+  "description": "A quiet, serif, reading-first theme. Same templates and features as the default theme.",
+  "requires_core": "1.1.0"
+}

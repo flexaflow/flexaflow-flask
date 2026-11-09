@@ -28,7 +28,7 @@
 {% set is_new = mode == 'add' %}
 {% set is_published = v_status == 'published' %}
 
-<form method="post" action="{{ url_for('add_post_route') if is_new else url_for('edit_post', slug=slug) }}" id="postForm" autocomplete="off">
+<form method="post" action="{{ url_for('editor.add_post_route') if is_new else url_for('editor.edit_post', slug=slug) }}" id="postForm" autocomplete="off">
 	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
 	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
@@ -87,8 +87,9 @@
 				<div class="card-header bg-white">Publish</div>
 				<div class="card-body">
 					{% if not can_publish %}
-					<p class="small text-muted">Your posts are saved as drafts. An editor will review and publish them.</p>
-					<button type="submit" name="status" value="draft" class="btn btn-primary mb-2">Save draft</button>
+					<p class="small text-muted">You cannot publish directly. Save a draft, or send it to an editor for review.</p>
+					<button type="submit" name="status" value="draft" class="btn btn-outline-secondary me-2 mb-2">Save draft</button>
+					<button type="submit" name="status" value="pending" class="btn btn-primary mb-2" id="submitReviewSlot">Submit for review</button>
 					{% elif is_published and not is_new %}
 					<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Update</button>
 					<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Switch to draft</button>
@@ -96,6 +97,7 @@
 					<button type="submit" name="status" value="published" class="btn btn-primary me-2 mb-2">Publish</button>
 					<button type="submit" name="status" value="draft" class="btn btn-outline-secondary mb-2">Save draft</button>
 					{% endif %}
+{% with kind='post', obj=post %}{% include '_publish_extras.html' %}{% endwith %}
 					{% if not is_new and is_published %}
 					<div class="small mt-2"><a href="{{ post_url(post) }}" target="_blank" rel="noopener">View on site</a></div>
 					{% endif %}
@@ -161,7 +163,7 @@
 		<div class="modal-body">This permanently removes <strong>{{ v_title }}</strong>.</div>
 		<div class="modal-footer">
 			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-			<form method="post" action="{{ url_for('delete_post_route', slug=slug) }}" class="d-inline">
+			<form method="post" action="{{ url_for('editor.delete_post_route', slug=slug) }}" class="d-inline">
 				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 				<button type="submit" class="btn btn-danger">Delete</button>
 			</form>

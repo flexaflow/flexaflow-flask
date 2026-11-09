@@ -1,0 +1,24 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Contact messages{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Contact messages</h1>
+{% if not mail_ok %}<div class="alert alert-info">Email is not configured, so messages are only stored here. Set it up under Site &gt; Email, SEO &amp; comments.</div>{% endif %}
+{% for m in messages %}
+<div class="card mb-2 {{ '' if m.is_read else 'border-primary' }}"><div class="card-body">
+	<div class="d-flex justify-content-between">
+		<div><strong>{{ m.name }}</strong> &lt;<a href="mailto:{{ m.email }}">{{ m.email }}</a>&gt;
+			<span class="text-muted small">· {{ m.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></div>
+		<div>
+			<form method="post" class="d-inline" action="{{ url_for('features.message_action', msg_id=m.id, action='unread' if m.is_read else 'read') }}">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+				<button class="btn btn-sm btn-outline-secondary">{{ 'Mark unread' if m.is_read else 'Mark read' }}</button></form>
+			<form method="post" class="d-inline" action="{{ url_for('features.message_action', msg_id=m.id, action='delete') }}" onsubmit="return confirm('Delete this message?')">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+				<button class="btn btn-sm btn-outline-danger">Delete</button></form>
+		</div>
+	</div>
+	{% if m.subject %}<div class="fw-semibold mt-1">{{ m.subject }}</div>{% endif %}
+	<div class="mt-2" style="white-space:pre-wrap">{{ m.message }}</div>
+</div></div>
+{% else %}<p class="text-muted">No messages yet.</p>{% endfor %}
+{% endblock %}

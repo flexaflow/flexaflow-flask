@@ -1,0 +1,20 @@
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+extend-exclude = ["themes", "static", "extensions", "migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E9", "F", "B006", "B008"]
+ignore = ["F401", "F403", "F405", "F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "contrib"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff.lint.per-file-ignores]
+# blueprints/* receive their shared helpers from app.py at import time (see blueprints/__init__.py)
+"blueprints/*.py" = ["F821"]
+
+[tool.ruff.format]
+indent-style = "tab"   # the code base is tab-indented; run `ruff format <file>` on files you touch
+quote-style = "double"

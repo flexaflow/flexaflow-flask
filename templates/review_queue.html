@@ -1,0 +1,24 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Review queue</h1>
+{% for p in posts %}
+<div class="card mb-3"><div class="card-body">
+	<h2 class="h6"><a href="{{ url_for('editor.edit_post', slug=p.slug) }}">{{ p.title }}</a></h2>
+	<div class="small text-muted mb-2">by {{ names.get(p.author_id, 'unknown') }} · updated {{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at }}</div>
+	<div class="d-flex gap-2 align-items-start">
+		<form method="post" action="{{ url_for('features.review_action', slug=p.slug, action='approve') }}">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<button class="btn btn-success btn-sm">Approve and publish</button>
+		</form>
+		<form method="post" action="{{ url_for('features.review_action', slug=p.slug, action='reject') }}" class="d-flex gap-2">
+			<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+			<input name="note" class="form-control form-control-sm" placeholder="Note to the author (optional)" maxlength="1000">
+			<button class="btn btn-outline-secondary btn-sm text-nowrap">Return as draft</button>
+		</form>
+	</div>
+</div></div>
+{% else %}
+<p class="text-muted">Nothing is waiting for review.</p>
+{% endfor %}
+{% endblock %}

@@ -55,7 +55,8 @@ Declaring `settings` adds a **Settings** screen automatically; read values with 
 | `api.register_demo_content(fn, label=, description=)` | Adds an **Install sample content** button. `fn(api, overwrite=False)` returns a message. |
 | `api.render("file.html", **ctx)`, `api.static_url("x.css")` | Render your template / link your static file. |
 | `api.settings.get/set/all/replace` | Per-extension settings stored in the site settings. |
-| `api.create_tables(Base)` | Create tables for SQLAlchemy models you declared on `data_store.Base`. |
+| `api.create_tables(Base)` | Create tables for SQLAlchemy models (or Core `Table`s) you declared on `data_store.Base`. |
+| `api.register_export(export_fn, import_fn)` | Put your own tables into **Site > Export**. `export_fn()` returns JSON-able data; `import_fn(data, overwrite)` stores it and returns a count. If the extension is not active when a package is imported, the data waits and is applied on activation. |
 
 Capabilities (see `auth.py`): `manage_pages`, `manage_settings`, `create_posts`, `manage_people`, `manage_taxonomy`, `manage_users`, `manage_extensions`, ...
 
@@ -88,4 +89,29 @@ Extensions that register a directory use the theme's `directory_index.html` / `d
 ## Export / import
 
 Records an extension keeps in the shared `entries` table (directories) and its settings are included in **Export > Extension data**
-automatically. Extensions that create their own tables should register their own export through a hook in a later release.
+automatically. Extensions that create their own tables register `api.register_export(...)` (see `contrib/extensions/newsletter`).
+
+## Bundled extensions and themes
+
+`contrib/extensions/` holds first-party examples that are also useful: **newsletter** (signup form, subscriber list, CSV, export hook),
+**backups** (create and download full-site packages) and **seo-audit** (a report of weak titles, missing descriptions and images without alt text).
+`themes/minimal` is a second public theme.
+
+## Packages index
+
+`python tools/build_packages.py` zips every extension in `contrib/extensions/` and every theme except `default`, and writes `packages/index.json`
+with each package's version, the core version it needs (`requires_core`) and the SHA-256 of its zip. **Site > Packages** lists them, shows whether
+each is installed, up to date or incompatible, and installs one after checking the hash. Installing never activates; you still read the trust
+warning on the Extensions/Themes screen. To publish your own packages, add the folder under `contrib/extensions/` (or `themes/`) and rebuild.
+
+## Starting a new extension and testing it
+
+```bash
+pip install cookiecutter
+cookiecutter project-templates/extension
+cp -r my-extension contrib/extensions/
+pytest contrib/extensions/my-extension/tests
+```
+
+The generated test installs the folder, activates it and checks its public and admin pages using the same fixtures as the core tests
+(`tests/flexaflow_fixtures.py`: `app`, `client`, `login_as("administrator" | "editor" | "author" | "contributor")`).

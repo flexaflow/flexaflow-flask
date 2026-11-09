@@ -87,7 +87,7 @@
 			</div>
 
 			<div class="d-flex justify-content-between">
-				<a href="{{ url_for('users_index') if not is_profile else url_for('admin') }}" class="btn btn-outline-secondary">Cancel</a>
+				<a href="{{ url_for('auth.users_index') if not is_profile else url_for('admin.admin') }}" class="btn btn-outline-secondary">Cancel</a>
 				<button type="submit" class="btn btn-primary">{{ 'Create user' if is_create else 'Save changes' }}</button>
 			</div>
 		</form>
@@ -109,10 +109,15 @@
 					</div>
 					<button type="submit" class="btn btn-sm btn-outline-danger">Disable 2FA</button>
 				</form>
-				<a href="{{ url_for('enable_2fa') }}" class="btn btn-sm btn-link px-0 mt-2" onclick="return confirm('Replace your authenticator? You will need to scan a new QR code.')">Replace authenticator</a>
+				<form method="POST" action="{{ url_for('auth.regenerate_recovery_codes') }}" class="mt-2" onsubmit="return confirm('Generate new recovery codes? The old ones stop working.')">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+					<input type="password" name="current_password" class="form-control form-control-sm mb-1" placeholder="Current password" required>
+					<button type="submit" class="btn btn-sm btn-outline-secondary">New recovery codes</button>
+				</form>
+				<a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-sm btn-link px-0 mt-2" onclick="return confirm('Replace your authenticator? You will need to scan a new QR code.')">Replace authenticator</a>
 				{% else %}
 				<p><span class="badge text-bg-secondary">Disabled</span> Add an authenticator app for a second login step.</p>
-				<a href="{{ url_for('enable_2fa') }}" class="btn btn-sm btn-success">Enable 2FA</a>
+				<a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-sm btn-success">Enable 2FA</a>
 				{% endif %}
 			</div>
 		</div>

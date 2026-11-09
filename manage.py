@@ -224,6 +224,30 @@ def _migrate_export(args, target):
 	print(f"Wrote {args.output} ({len(data) // 1024} KB).")
 
 
+def _alembic_cfg():
+	import os
+	from alembic.config import Config
+	cfg = Config()
+	cfg.set_main_option("script_location", os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations"))
+	return cfg
+
+
+def cmd_publish_due(args):
+	import features
+	print(f"Published {features.publish_due(force=True)} item(s).")
+
+
+def cmd_db_upgrade(args):
+	from alembic import command
+	command.upgrade(_alembic_cfg(), "head")
+	print("Database is up to date.")
+
+
+def cmd_db_current(args):
+	from alembic import command
+	command.current(_alembic_cfg(), verbose=True)
+
+
 def build_parser():
 	parser = argparse.ArgumentParser(description="FlexaFlow management commands")
 	sub = parser.add_subparsers(dest="command", required=True)
@@ -261,6 +285,15 @@ def build_parser():
 	p = sub.add_parser("activate", help="Allow a deactivated user to log in again")
 	p.add_argument("username")
 	p.set_defaults(func=lambda a: _set_active(a, True))
+
+	p = sub.add_parser("publish-due", help="Publish scheduled posts and pages whose time has come (for cron)")
+	p.set_defaults(func=cmd_publish_due)
+
+	p = sub.add_parser("db-upgrade", help="Apply database migrations (also done automatically at startup)")
+	p.set_defaults(func=cmd_db_upgrade)
+
+	p = sub.add_parser("db-current", help="Show the database schema revision")
+	p.set_defaults(func=cmd_db_current)
 
 	p = sub.add_parser("listusers", help="List accounts")
 	p.set_defaults(func=cmd_listusers)

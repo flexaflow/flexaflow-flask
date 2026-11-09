@@ -1,0 +1,12 @@
+{% extends "_admin_layout.html" %}
+{% block title %}SEO audit{% endblock %}
+{% block content %}
+<h1 class="h4 mb-1">SEO audit</h1>
+<p class="text-muted">{{ rows|length }} of {{ total }} published items have something to look at.</p>
+{% for r in rows %}
+<div class="card mb-2"><div class="card-body py-2">
+	<a href="{{ r.edit }}"><strong>{{ r.title }}</strong></a> <span class="badge text-bg-light">{{ r.kind }}</span>
+	<ul class="mb-0 small">{% for p in r.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+</div></div>
+{% else %}<p>Nothing to fix.</p>{% endfor %}
+{% endblock %}

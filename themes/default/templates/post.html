@@ -38,7 +38,7 @@
     </header>
 
     <div class="content">
-        {{ post.content|safe }}
+        {{ post.content|responsive }}
     </div>
 
     {% if post.tags %}
@@ -72,6 +72,31 @@
             {% endfor %}
         </div>
     </div>
+    {% endif %}
+
+    {% if comments_enabled %}
+    <section id="comments" class="mt-5">
+        <h2 class="h4">Comments</h2>
+        {% for c in comments %}
+        <div class="border-bottom py-3">
+            <strong>{{ c.author_name }}</strong>
+            <small class="text-muted ms-2">{{ c.created_at.strftime('%Y-%m-%d') }}</small>
+            <div style="white-space:pre-wrap">{{ c.body }}</div>
+        </div>
+        {% else %}
+        <p class="text-muted">No comments yet.</p>
+        {% endfor %}
+        <h3 class="h5 mt-4">Leave a comment</h3>
+        <form method="post" action="/post/{{ post.slug }}/comment">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div style="position:absolute;left:-10000px" aria-hidden="true"><input name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="mb-2"><input class="form-control" name="author_name" placeholder="Name" required maxlength="150"></div>
+            <div class="mb-2"><input class="form-control" type="email" name="author_email" placeholder="Email (not shown)" maxlength="255"></div>
+            <div class="mb-2"><textarea class="form-control" name="body" rows="4" placeholder="Your comment" required maxlength="3000"></textarea></div>
+            <button class="btn btn-primary">Post comment</button>
+            <small class="text-muted ms-2">Comments appear after approval.</small>
+        </form>
+    </section>
     {% endif %}
 </article>
 {% endblock %}

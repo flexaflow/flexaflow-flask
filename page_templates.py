@@ -158,7 +158,10 @@ def fill_defaults(stored: Dict[str, Any], fields: List[Dict[str, Any]]) -> Dict[
 
 def _clean_simple(field: Dict[str, Any], raw: str) -> str:
 	ftype = field["type"]
-	value = (raw or "").strip() if ftype != "richtext" else (raw or "").strip()
+	value = (raw or "").strip()
+	if ftype == "richtext":
+		from migrate_utils import sanitize_html  # imported here to avoid a circular import
+		value = sanitize_html(value)
 	value = value[: MAX_LENGTH.get(ftype, 500)]
 	if ftype == "url":
 		if value and not re.match(r"^(https?://|mailto:|tel:|/|#)", value):

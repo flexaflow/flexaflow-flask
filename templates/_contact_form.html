@@ -1,0 +1,14 @@
+<h1>{{ page.title }}</h1>
+{% if page.content %}<div>{{ page.content|safe }}</div>{% endif %}
+{% if sent %}<p role="status"><strong>Thank you. Your message has been sent.</strong></p>{% else %}
+{% for e in errors %}<p role="alert" style="color:#b00020">{{ e }}</p>{% endfor %}
+<form method="post" action="/contact">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<div style="position:absolute;left:-10000px" aria-hidden="true"><label>Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label></div>
+	<label>Name<input name="name" value="{{ form.name }}" required maxlength="200"></label>
+	<label>Email<input type="email" name="email" value="{{ form.email }}" required maxlength="255"></label>
+	<label>Subject<input name="subject" value="{{ form.subject }}" maxlength="300"></label>
+	<label>Message<textarea name="message" rows="6" required maxlength="5000">{{ form.message }}</textarea></label>
+	<button type="submit">Send message</button>
+</form>
+{% endif %}

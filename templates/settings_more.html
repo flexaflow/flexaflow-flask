@@ -1,0 +1,28 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Email, SEO &amp; comments{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Email, SEO &amp; comments</h1>
+<form method="post" class="row g-3" style="max-width:760px">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<h2 class="h6 mt-3">Outgoing email (contact form, review and comment notices)</h2>
+	<div class="col-md-8"><label class="form-label">SMTP server</label><input name="mail_host" class="form-control" value="{{ s.mail_host or '' }}"></div>
+	<div class="col-md-4"><label class="form-label">Port</label><input name="mail_port" class="form-control" value="{{ s.mail_port or '587' }}"></div>
+	<div class="col-md-4"><label class="form-label">Security</label>
+		<select name="mail_security" class="form-select">{% for v,l in [('starttls','STARTTLS'),('ssl','SSL/TLS'),('none','None')] %}<option value="{{ v }}" {{ 'selected' if (s.mail_security or 'starttls')==v }}>{{ l }}</option>{% endfor %}</select></div>
+	<div class="col-md-4"><label class="form-label">Username</label><input name="mail_user" class="form-control" value="{{ s.mail_user or '' }}" autocomplete="off"></div>
+	<div class="col-md-4"><label class="form-label">Password</label><input type="password" name="mail_password" class="form-control" autocomplete="new-password" placeholder="{{ 'unchanged' if has_password else '' }}">
+		{% if has_password %}<label class="small"><input type="checkbox" name="clear_mail_password"> remove saved password</label>{% endif %}</div>
+	<div class="col-md-6"><label class="form-label">From address</label><input name="mail_from" class="form-control" value="{{ s.mail_from or '' }}" placeholder="site@example.com"></div>
+	<div class="col-md-6"><label class="form-label">Send contact messages to</label><input name="contact_recipient" class="form-control" value="{{ s.contact_recipient or '' }}"></div>
+	<div class="col-12"><label><input type="checkbox" name="send_test"> Send a test email after saving</label></div>
+
+	<h2 class="h6 mt-4">SEO</h2>
+	<div class="col-12"><label class="form-label">Site description (meta description and structured data)</label><input name="site_description" class="form-control" maxlength="300" value="{{ s.site_description or '' }}"></div>
+	<div class="col-12"><label class="form-label">Default social image URL</label><input name="default_og_image" class="form-control" value="{{ s.default_og_image or '' }}"></div>
+	<div class="col-12"><label class="form-label">robots.txt (leave empty for the default)</label><textarea name="robots_txt" rows="6" class="form-control" style="font-family:monospace">{{ s.robots_txt or '' }}</textarea></div>
+
+	<h2 class="h6 mt-4">Comments</h2>
+	<div class="col-12"><label><input type="checkbox" name="comments_enabled" {{ 'checked' if s.comments_enabled in ('1', 1, True, 'true', 'on') }}> Allow comments on posts (held for approval)</label></div>
+	<div class="col-12"><button class="btn btn-primary">Save</button></div>
+</form>
+{% endblock %}

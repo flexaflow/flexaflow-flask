@@ -26,7 +26,7 @@
 					{% endfor %}
 				{% endwith %}
 
-				<form method="POST" action="{{ url_for('login') }}" autocomplete="on">
+				<form method="POST" action="{{ url_for('auth.login') }}" autocomplete="on">
 					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 					<input type="hidden" name="next" value="{{ next_url }}">
 
@@ -41,13 +41,13 @@
 					</div>
 					<button type="submit" class="btn btn-primary w-100">Log in</button>
 					{% else %}
-					<p class="small text-muted mb-3">Signed in as <strong>{{ username }}</strong>. Enter the 6-digit code from your authenticator app.</p>
+					<p class="small text-muted mb-3">Signed in as <strong>{{ username }}</strong>. Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
 					<div class="mb-3">
 						<label for="2fa_code">Authentication code</label>
-						<input type="text" class="form-control text-center" id="2fa_code" name="2fa_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus autocomplete="one-time-code">
+						<input type="text" class="form-control text-center" id="2fa_code" name="2fa_code" maxlength="13" required autofocus autocomplete="one-time-code">
 					</div>
 					<button type="submit" class="btn btn-primary w-100">Verify</button>
-					<a href="{{ url_for('login') }}" class="btn btn-link w-100 btn-sm">Start over</a>
+					<a href="{{ url_for('auth.login') }}" class="btn btn-link w-100 btn-sm">Start over</a>
 					{% endif %}
 				</form>
 			</div>

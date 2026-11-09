@@ -1,0 +1,49 @@
+{
+  "format": 1,
+  "packages": [
+    {
+      "kind": "extension",
+      "slug": "backups",
+      "name": "Backups",
+      "version": "1.0.0",
+      "description": "Create and download full-site backup packages (content, settings, extension data, media) from the admin. Keeps the newest ten in instance/backups.",
+      "author": "FlexaFlow",
+      "requires_core": "1.1.0",
+      "file": "backups-1.0.0.zip",
+      "sha256": "a9b38228645dfa607cf1aad2366a2d735525a5170aef477c975e8c56898c9cbf"
+    },
+    {
+      "kind": "extension",
+      "slug": "newsletter",
+      "name": "Newsletter signup",
+      "version": "1.0.0",
+      "description": "A public signup form at /newsletter/ with a subscriber list and CSV export in the admin. Subscribers are included in site exports.",
+      "author": "FlexaFlow",
+      "requires_core": "1.1.0",
+      "file": "newsletter-1.0.0.zip",
+      "sha256": "ee7d719790d73b5bc7ef1b5788a32e62bf899bacabd014364ea636635e0acd99"
+    },
+    {
+      "kind": "extension",
+      "slug": "seo-audit",
+      "name": "SEO audit",
+      "version": "1.0.0",
+      "description": "An admin report of published pages and posts with missing descriptions, weak titles, duplicate titles and images without alt text.",
+      "author": "FlexaFlow",
+      "requires_core": "1.1.0",
+      "file": "seo-audit-1.0.0.zip",
+      "sha256": "13fef20761bec9cde1b8f4542a9552e0ca24a01f5b42326e55bfa6238beda65e"
+    },
+    {
+      "kind": "theme",
+      "slug": "minimal",
+      "name": "Minimal",
+      "version": "1.0.0",
+      "description": "A quiet, serif, reading-first theme. Same templates and features as the default theme.",
+      "author": "FlexaFlow",
+      "requires_core": "1.1.0",
+      "file": "minimal-1.0.0.zip",
+      "sha256": "305186c532843ac5234d70742ef1714b7db3bc11b320371ce094bf669695f057"
+    }
+  ]
+}

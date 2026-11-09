@@ -5,8 +5,8 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
 	<h1 class="h4 mb-2">Dashboard</h1>
 	<div class="mb-2">
-		{% if show_pages_tab %}<a class="btn btn-outline-primary me-2" href="{{ url_for('add_page_route') }}">Add page</a>{% endif %}
-		{% if can('create_posts') %}<a class="btn btn-outline-primary" href="{{ url_for('add_post_route') }}">Add post</a>{% endif %}
+		{% if show_pages_tab %}<a class="btn btn-outline-primary me-2" href="{{ url_for('editor.add_page_route') }}">Add page</a>{% endif %}
+		{% if can('create_posts') %}<a class="btn btn-outline-primary" href="{{ url_for('editor.add_post_route') }}">Add post</a>{% endif %}
 	</div>
 </div>
 
@@ -55,15 +55,15 @@
 				<tbody>
 				{% for p in pages|sort(attribute='title') %}
 					<tr class="page-row">
-						<td><a href="{{ url_for('edit_page', slug=p.slug) }}">{{ p.title }}</a></td>
+						<td><a href="{{ url_for('editor.edit_page', slug=p.slug) }}">{{ p.title }}</a></td>
 						<td><code>/{{ p.slug }}</code></td>
 						<td class="small">{{ page_templates[p.template].label if p.template in page_templates else 'Default page' }}</td>
 						<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
 						<td class="small text-muted">{{ (p.updated_at or '')|string|truncate(16, True, '') }}</td>
 						<td class="actions text-end">
-							<a href="{{ url_for('edit_page', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+							<a href="{{ url_for('editor.edit_page', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
 							<a href="/page/preview/{{ p.slug }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Preview</a>
-							<form method="post" action="{{ url_for('delete_page_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this page permanently?');">
+							<form method="post" action="{{ url_for('editor.delete_page_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this page permanently?');">
 								<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 								<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
 							</form>
@@ -86,16 +86,16 @@
 				{% for p in post_rows %}
 					{% set author = users_by_id.get(p.author_id) %}
 					<tr>
-						<td><a href="{{ url_for('edit_post', slug=p.slug) }}">{{ p.title }}</a></td>
+						<td><a href="{{ url_for('editor.edit_post', slug=p.slug) }}">{{ p.title }}</a></td>
 						<td class="small">{{ (author.display_name if author else 'Unknown') }}</td>
 						<td class="small">{{ p.category.name if p.category else '—' }}{% if p.category and p.category.section_path %} <code>/{{ p.category.section_path }}/</code>{% endif %}</td>
 						<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
 						<td class="small text-muted">{{ (p.published_at or p.created_at or '')|string|truncate(10, True, '') }}</td>
 						<td class="actions text-end">
-							<a href="{{ url_for('edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+							<a href="{{ url_for('editor.edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
 							{% if p.status == 'published' %}<a href="{{ p.public_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>{% endif %}
 							{% if can('edit_others_content') or p.author_id == current_user.id %}
-							<form method="post" action="{{ url_for('delete_post_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this post permanently?');">
+							<form method="post" action="{{ url_for('editor.delete_post_route', slug=p.slug) }}" class="d-inline" onsubmit="return confirm('Delete this post permanently?');">
 								<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 								<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
 							</form>

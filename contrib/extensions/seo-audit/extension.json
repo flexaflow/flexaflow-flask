@@ -1,0 +1,8 @@
+{
+  "name": "SEO audit",
+  "slug": "seo-audit",
+  "version": "1.0.0",
+  "description": "An admin report of published pages and posts with missing descriptions, weak titles, duplicate titles and images without alt text.",
+  "author": "FlexaFlow",
+  "requires_core": "1.1.0"
+}

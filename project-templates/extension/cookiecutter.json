@@ -1,0 +1,8 @@
+{
+  "name": "My Extension",
+  "slug": "{{ cookiecutter.name.lower().replace(' ', '-') }}",
+  "description": "What it does.",
+  "author": "You",
+  "version": "0.1.0",
+  "requires_core": "1.1.0"
+}

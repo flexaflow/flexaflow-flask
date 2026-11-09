@@ -1,0 +1,8 @@
+{
+  "name": "Default",
+  "slug": "default",
+  "version": "1.1.0",
+  "author": "FlexaFlow",
+  "description": "The standard FlexaFlow theme.",
+  "requires_core": "1.1.0"
+}

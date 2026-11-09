@@ -1,0 +1,17 @@
+services:
+  flexaflow:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - flexaflow-data:/data
+      - flexaflow-instance:/app/instance
+      - flexaflow-uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  flexaflow-data:
+  flexaflow-instance:
+  flexaflow-uploads:  
+  

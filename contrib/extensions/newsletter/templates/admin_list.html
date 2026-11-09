@@ -1,0 +1,13 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Newsletter subscribers{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-0">Newsletter subscribers ({{ rows|length }})</h1>
+	<a class="btn btn-outline-primary btn-sm" href="/admin/ext/newsletter/export.csv">Download CSV</a>
+</div>
+<table class="table table-sm"><thead><tr><th>Email</th><th>Subscribed (UTC)</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.email }}</td><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at }}</td>
+<td class="text-end"><form method="post" action="/admin/ext/newsletter/delete/{{ r.id }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-outline-danger">Remove</button></form></td></tr>
+{% else %}<tr><td colspan="3" class="text-muted">No subscribers yet. The form is at <a href="/newsletter/">/newsletter/</a>.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

@@ -81,7 +81,7 @@
 
             <hr class="my-4">
 
-            <form method="POST" action="{{ url_for('setup_2fa') }}">
+            <form method="POST" action="{{ url_for('auth.setup_2fa') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3 text-center">
                     <label for="verify_2fa_code" class="form-label">Verify 2FA Code</label>
@@ -91,7 +91,7 @@
                     <button type="submit" class="btn btn-success">Verify & Enable 2FA</button>
                 </div>
             </form>
-            <form method="POST" action="{{ url_for('setup_2fa') }}" class="text-center mt-3">
+            <form method="POST" action="{{ url_for('auth.setup_2fa') }}" class="text-center mt-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="cancel_2fa" value="1">
                 <button type="submit" class="btn btn-secondary">Skip & Continue to Login</button>

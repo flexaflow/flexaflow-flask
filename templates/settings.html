@@ -132,10 +132,10 @@
                         </div>
                         <div class="d-flex flex-wrap align-items-center mb-2">
                             {% if settings.two_fa_enabled %}
-                                <a href="{{ url_for('profile') }}" class="btn btn-danger btn-sm me-2 mb-2" onclick="return confirm('Are you sure you want to disable 2FA?')">Manage 2FA</a>
-                                <a href="{{ url_for('enable_2fa') }}" class="btn btn-warning btn-sm mb-2" onclick="return confirm('Are you sure you want to reset 2FA? This will require you to set up your authenticator app again.')">Reset 2FA</a>
+                                <a href="{{ url_for('auth.profile') }}" class="btn btn-danger btn-sm me-2 mb-2" onclick="return confirm('Are you sure you want to disable 2FA?')">Manage 2FA</a>
+                                <a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-warning btn-sm mb-2" onclick="return confirm('Are you sure you want to reset 2FA? This will require you to set up your authenticator app again.')">Reset 2FA</a>
                             {% else %}
-                                <a href="{{ url_for('enable_2fa') }}" class="btn btn-success btn-sm mb-2">Enable 2FA</a>
+                                <a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-success btn-sm mb-2">Enable 2FA</a>
                             {% endif %}
                         </div>
                         <small class="form-text text-muted">

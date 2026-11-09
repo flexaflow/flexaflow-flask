@@ -1,0 +1,101 @@
+{# Shared editor extras. Expects: kind ('post'|'page'), obj (dict or None), is_new, can_publish #}
+{% set seo = (obj.seo if obj and obj.seo else {}) %}
+<input type="hidden" name="tz_offset" id="tzOffset" value="0">
+<div class="mt-3 pt-3 border-top">
+	<label class="form-label small mb-1" for="publishAt">Schedule (your local time)</label>
+	<input type="datetime-local" class="form-control form-control-sm" id="publishAt" name="publish_at"
+	       data-utc="{{ obj.publish_at if obj and obj.publish_at else '' }}">
+	<div class="form-text">Leave empty to publish immediately. Set a future time, then press Publish to schedule.</div>
+	{% if obj and obj.status == 'scheduled' %}<div class="small text-info mt-1">Scheduled for {{ obj.publish_at }} UTC.</div>{% endif %}
+	{% if obj and obj.status == 'pending' %}<div class="small text-warning mt-1">Waiting for editor review.</div>{% endif %}
+</div>
+{% if kind == 'post' and not can_publish %}
+<script>document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('submitReviewSlot');if(b)b.hidden=false;});</script>
+{% endif %}
+<details class="mt-3 pt-3 border-top">
+	<summary class="small fw-semibold">Search engine settings</summary>
+	<div class="mt-2">
+		<label class="form-label small mb-1">SEO title</label>
+		<input class="form-control form-control-sm mb-2" name="seo_title" maxlength="200" value="{{ seo.title or '' }}">
+		<label class="form-label small mb-1">Meta description</label>
+		<textarea class="form-control form-control-sm mb-2" name="seo_description" rows="2" maxlength="300">{{ seo.description or '' }}</textarea>
+		<label class="form-label small mb-1">Canonical URL</label>
+		<input class="form-control form-control-sm mb-2" name="seo_canonical" maxlength="500" value="{{ seo.canonical or '' }}" placeholder="Only if this content lives elsewhere">
+		<label class="form-label small mb-1">Social image URL</label>
+		<input class="form-control form-control-sm" name="seo_og_image" maxlength="500" value="{{ seo.og_image or '' }}">
+	</div>
+</details>
+{% if not is_new and obj %}
+<div class="small mt-3"><a href="{{ url_for('features.history', kind=kind, obj_id=obj.id) }}">History and restore</a></div>
+{% endif %}
+<div id="autosaveStatus" class="small text-muted mt-2"></div>
+<div id="autosaveBanner" class="alert alert-warning small mt-2" hidden></div>
+<script>
+(function () {
+	var kind = '{{ kind }}', objId = {{ obj.id if obj and obj.id else 'null' }};
+	var form = document.querySelector('form#postForm, form#pageForm');
+	var off = document.getElementById('tzOffset');
+	var pa = document.getElementById('publishAt');
+	off.value = new Date().getTimezoneOffset();
+	if (pa.dataset.utc) {  // stored in UTC; show in the browser's time zone
+		var d = new Date(pa.dataset.utc.replace(' ', 'T') + 'Z');
+		if (!isNaN(d)) { d = new Date(d.getTime() - d.getTimezoneOffset() * 60000); pa.value = d.toISOString().slice(0, 16); }
+	}
+	var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+	var statusEl = document.getElementById('autosaveStatus'), banner = document.getElementById('autosaveBanner');
+	var key = 'ff-autosave-' + kind + '-' + (objId || 'new');
+	function ed() { return window.tinymce && tinymce.get('editor'); }
+	function snapshot() {
+		var e = ed();
+		return { title: (document.getElementById('titleInput') || {}).value || '',
+		         content: e ? e.getContent() : '',
+		         summary: (form.querySelector('[name=description]') || {}).value || '' };
+	}
+	var last = null;
+	function restore(data) {
+		var e = ed(); if (!e) return;
+		document.getElementById('titleInput').value = data.title || '';
+		e.setContent(data.content || '');
+		var s = form.querySelector('[name=description]'); if (s) s.value = data.summary || '';
+		banner.hidden = true;
+	}
+	function offer(data, when) {
+		banner.hidden = false;
+		banner.innerHTML = '';
+		banner.append('An unsaved draft from ' + new Date(when).toLocaleString() + ' was found. ');
+		var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm btn-warning ms-1'; b.textContent = 'Restore it';
+		b.onclick = function () { restore(data); }; banner.append(b);
+	}
+	function tick() {
+		var e = ed(); if (!e) return;
+		var now = snapshot(), sig = JSON.stringify(now);
+		if (last === null) { last = sig; return; }
+		if (sig === last) return;
+		last = sig;
+		if (objId) {
+			fetch('/admin/autosave/' + kind + '/' + objId, { method: 'POST', credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token }, body: sig })
+				.then(function (r) { return r.json(); })
+				.then(function () { statusEl.textContent = 'Draft autosaved ' + new Date().toLocaleTimeString(); })
+				.catch(function () { statusEl.textContent = 'Autosave failed'; });
+		} else {
+			try { localStorage.setItem(key, JSON.stringify({ data: now, at: Date.now() })); statusEl.textContent = 'Draft kept in this browser ' + new Date().toLocaleTimeString(); } catch (x) {}
+		}
+	}
+	window.addEventListener('load', function () {
+		var wait = setInterval(function () {
+			var e = ed(); if (!e || !e.initialized) return; clearInterval(wait);
+			last = JSON.stringify(snapshot());
+			setInterval(tick, 20000);
+			if (objId) {
+				fetch('/admin/autosave/' + kind + '/' + objId, { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+					.then(function (a) { if (a && JSON.stringify({title:a.title,content:a.content,summary:a.summary}) !== last) offer(a, a.saved_at); }).catch(function () {});
+			} else {
+				try { var s = JSON.parse(localStorage.getItem(key) || 'null');
+					if (s && s.data && s.data.content && JSON.stringify(s.data) !== last) offer(s.data, s.at); } catch (x) {}
+			}
+		}, 300);
+	});
+	form.addEventListener('submit', function () { try { localStorage.removeItem(key); } catch (x) {} });
+})();
+</script>

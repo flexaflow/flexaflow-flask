@@ -75,7 +75,7 @@
 						</li>
 						{% endfor %}
 						{% if can('upload_media') %}<li class="nav-item"><a class="nav-link" href="/admin/media">Media</a></li>{% endif %}
-					{% if can('manage_taxonomy') or can('manage_users') or can('manage_settings') or can('manage_extensions') %}
+					{% if can('manage_taxonomy') or can('manage_users') or can('manage_settings') or can('manage_extensions') or can('moderate') %}
 					<li class="nav-item dropdown">
 						<a class="nav-link dropdown-toggle" href="#" id="siteMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Site</a>
 						<div class="dropdown-menu" aria-labelledby="siteMenu">
@@ -84,9 +84,18 @@
 							<a class="dropdown-item" href="/admin/menu">Navigation menu</a>
 							<a class="dropdown-item" href="/admin/settings">Settings</a>
 							{% endif %}
+							{% if can('manage_settings') %}<a class="dropdown-item" href="{{ url_for('features.settings_more') }}">Email, SEO &amp; comments</a>{% endif %}
+							{% if can('moderate') %}
+							<div class="dropdown-divider"></div>
+							<a class="dropdown-item" href="{{ url_for('features.review_queue') }}">Review queue</a>
+							<a class="dropdown-item" href="{{ url_for('features.comments_admin') }}">Comments</a>
+							<a class="dropdown-item" href="{{ url_for('features.messages') }}">Contact messages</a>
+							<a class="dropdown-item" href="{{ url_for('features.redirects_admin') }}">Redirects</a>
+							<div class="dropdown-divider"></div>
+							{% endif %}
 							{% if can('manage_taxonomy') %}<a class="dropdown-item" href="/admin/tags-and-catagories">Categories &amp; tags</a>{% endif %}
 							{% if can('manage_users') %}<a class="dropdown-item" href="/admin/users">Users</a>{% endif %}
-								{% if can('manage_extensions') %}<a class="dropdown-item" href="/admin/themes">Themes</a><a class="dropdown-item" href="/admin/extensions">Extensions</a>{% endif %}
+								{% if can('manage_extensions') %}<a class="dropdown-item" href="/admin/themes">Themes</a><a class="dropdown-item" href="/admin/extensions">Extensions</a><a class="dropdown-item" href="/admin/packages">Packages</a>{% endif %}
 							{% if can('manage_settings') %}
 							<div class="dropdown-divider"></div>
 							<a class="dropdown-item" href="/admin/export">Export</a>

@@ -13,8 +13,10 @@ needs with ``@capability_required("...")``; ``can()`` maps a role to the
 capabilities it grants. Keep this table as the single source of truth.
 """
 
+import json
+import logging
+import secrets
 import time
-from collections import defaultdict
 from functools import wraps
 from typing import Any, Dict, Optional
 
@@ -56,6 +58,7 @@ CAPABILITIES = {
 	"create_posts": {ROLE_ADMINISTRATOR, ROLE_EDITOR, ROLE_AUTHOR, ROLE_CONTRIBUTOR},
 	"upload_media": {ROLE_ADMINISTRATOR, ROLE_EDITOR, ROLE_AUTHOR, ROLE_CONTRIBUTOR},
 	"manage_media": {ROLE_ADMINISTRATOR, ROLE_EDITOR, ROLE_AUTHOR},
+	"moderate": {ROLE_ADMINISTRATOR, ROLE_EDITOR},  # review queue, comments, contact inbox, redirects
 }
 
 MIN_PASSWORD_LENGTH = 10
@@ -74,7 +77,7 @@ def current_user() -> Optional[Dict[str, Any]]:
 	user_id = session.get("user_id")
 	if user_id:
 		row = db_manager.get_user(int(user_id))
-		if row and row["is_active"]:
+		if row and row["is_active"] and session.get("sv", 0) == row.get("session_version", 0):
 			user = row
 	g._current_user = user
 	return user
@@ -93,6 +96,8 @@ def login_user(user_id: int) -> None:
 	session.clear()
 	session.permanent = True
 	session["user_id"] = int(user_id)
+	row = db_manager.get_user(int(user_id))
+	session["sv"] = (row or {}).get("session_version", 0)
 	db_manager.touch_last_login(int(user_id))
 
 
@@ -106,7 +111,7 @@ def login_required(view):
 		if current_user() is None:
 			session.clear()
 			flash("Please log in to continue.", "warning")
-			return redirect(url_for("login", next=request.path))
+			return redirect(url_for("auth.login", next=request.path))
 		return view(*args, **kwargs)
 	return wrapper
 
@@ -143,27 +148,116 @@ def verify_password(password_hash: str, password: str) -> bool:
 		return False
 
 
-MAX_FAILURES = 5
+# ---- security event log -------------------------------------------------
+security_log = logging.getLogger("flexaflow.security")
+
+
+def client_ip() -> str:
+	return request.remote_addr or "unknown"
+
+
+def log_event(event: str, **fields) -> None:
+	"""Write one line to the security log: who, from where, what happened."""
+	actor = session.get("user_id") if session else None
+	extras = " ".join(f"{k}={v!r}" for k, v in fields.items())
+	security_log.info("%s ip=%s actor=%s %s", event, client_ip(), actor, extras)
+
+
+# ---- login throttling (stored in the database) ---------------------------
+# Failures are counted per IP and per (username, IP), never per username alone,
+# so a stranger cannot lock a real user out from somewhere else. After a free
+# allowance each further failure doubles the wait, capped at MAX_DELAY.
 WINDOW_SECONDS = 15 * 60
-_failures: Dict[str, list] = defaultdict(list)
+MAX_DELAY = 15 * 60
+FREE_ATTEMPTS = {"user": 5, "ip": 15, "totp": 5, "global": 40}
 
 
-def _recent_failures(username: str) -> list:
-	now = time.time()
-	_failures[username] = [t for t in _failures[username] if now - t < WINDOW_SECONDS]
-	return _failures[username]
+def _delay_for(timestamps: list, free: int, cap: int = MAX_DELAY) -> int:
+	"""Seconds still to wait, given the failure timestamps (UTC) in the window."""
+	import datetime
+	count = len(timestamps)
+	if count < free:
+		return 0
+	delay = min(2 ** (count - free + 1), cap)
+	remaining = delay - (datetime.datetime.utcnow() - timestamps[-1]).total_seconds()
+	return max(0, int(remaining) + 1) if remaining > 0 else 0
 
 
-def is_locked_out(username: str) -> bool:
-	return len(_recent_failures(username)) >= MAX_FAILURES
+def _keys(kind: str, who: str):
+	ip = client_ip()
+	if kind == "totp":
+		return [("totp", f"totp:{who}", "totp", MAX_DELAY)]
+	return [
+		("login", f"ip:{ip}", "ip", MAX_DELAY),
+		("login", f"user:{who.lower()}|{ip}", "user", MAX_DELAY),
+		("login", f"name:{who.lower()}", "global", 60),  # soft cap so a distributed attack is still slowed
+	]
 
 
-def record_failure(username: str) -> None:
-	_recent_failures(username).append(time.time())
+def throttle_wait(kind: str, who: str) -> int:
+	"""Seconds the caller must wait before another attempt (0 = go ahead)."""
+	wait = 0
+	for k, key, allowance, cap in _keys(kind, who):
+		times = db_manager.recent_attempts(k, key, WINDOW_SECONDS)
+		wait = max(wait, _delay_for(times, FREE_ATTEMPTS[allowance], cap))
+	return wait
 
 
-def clear_failures(username: str) -> None:
-	_failures.pop(username, None)
+def record_failure(kind: str, who: str) -> None:
+	for k, key, _a, _c in _keys(kind, who):
+		db_manager.record_attempt(k, key)
+	log_event(f"{kind}_failure", who=who)
+
+
+def clear_failures(kind: str, who: str) -> None:
+	# Clear this user's own counters; the per-IP counter is left alone on purpose.
+	for k, key, allowance, _c in _keys(kind, who):
+		if allowance != "ip":
+			db_manager.clear_attempts(k, key)
+
+
+def wait_message(seconds: int) -> str:
+	mins, secs = divmod(seconds, 60)
+	span = f"{mins} min {secs} s" if mins else f"{secs} s"
+	return f"Too many failed attempts. Please wait {span} and try again."
+
+
+# ---- 2FA recovery codes --------------------------------------------------
+RECOVERY_CODE_COUNT = 8
+
+
+def generate_recovery_codes():
+	"""Return (plain_codes, json_of_hashes). Show the plain codes once; store only the hashes."""
+	plain = [f"{secrets.token_hex(3)}-{secrets.token_hex(3)}" for _ in range(RECOVERY_CODE_COUNT)]
+	return plain, json.dumps([generate_password_hash(c) for c in plain])
+
+
+def consume_recovery_code(user: Dict[str, Any], entered: str) -> bool:
+	"""If `entered` matches an unused recovery code, mark it used and return True."""
+	entered = (entered or "").strip().lower()
+	if len(entered) != 13 or "-" not in entered:
+		return False
+	try:
+		hashes = json.loads(user.get("two_fa_recovery") or "[]")
+	except ValueError:
+		return False
+	for i, h in enumerate(hashes):
+		if check_password_hash(h, entered):
+			del hashes[i]
+			db_manager.update_user(user["id"], two_fa_recovery=json.dumps(hashes))
+			return True
+	return False
+
+
+def invalidate_other_sessions(user_id: int) -> None:
+	"""Bump the user's session version; every session started before this stops working."""
+	row = db_manager.get_user(int(user_id))
+	new = (row.get("session_version", 0) + 1) if row else 1
+	db_manager.update_user(int(user_id), session_version=new)
+	if session.get("user_id") == int(user_id):
+		session["sv"] = new
+	if "_current_user" in g:
+		del g._current_user
 
 
 def validate_role(role: str) -> Optional[str]:

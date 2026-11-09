@@ -1,3 +1,4 @@
+import logging
 """
 Sections and directories for the department site.
 
@@ -32,6 +33,9 @@ RESERVED_PATHS = {
 	"uploads", "static", "sitemap.xml", "setup", "upload_image", "ext",
 	"robots.txt", "favicon.ico",
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 def reserved_paths():
@@ -133,7 +137,7 @@ def list_sections() -> List[Dict[str, Any]]:
 		)
 		return [c.to_dict() for c in rows]
 	except SQLAlchemyError as e:
-		print(f"Error listing sections: {e}")
+		logger.error(f"Error listing sections: {e}")
 		return []
 	finally:
 		db.close()
@@ -441,7 +445,7 @@ def list_entries(kind: str, groups: Optional[List[str]] = None, include_drafts: 
 			q = q.filter(Entry.status == "published")
 		return [_row_to_record(r) for r in q.order_by(Entry.sort_order, Entry.id).all()]
 	except SQLAlchemyError as e:
-		print(f"Error listing entries: {e}")
+		logger.error(f"Error listing entries: {e}")
 		return []
 	finally:
 		db.close()
@@ -674,7 +678,7 @@ def bulk_update_posts(
 		db.commit()
 	except SQLAlchemyError as e:
 		db.rollback()
-		print(f"Bulk update failed: {e}")
+		logger.error(f"Bulk update failed: {e}")
 		return 0, len(ids)
 	finally:
 		db.close()

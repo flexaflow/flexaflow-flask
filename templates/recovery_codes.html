@@ -1,0 +1,11 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Recovery codes{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:560px">
+	<h1 class="h4 mb-3">Your recovery codes</h1>
+	<div class="alert alert-warning">Save these codes now. Each works once if you lose your authenticator app. They will not be shown again.</div>
+	<pre class="border rounded p-3 bg-light fs-5">{% for c in codes %}{{ c }}
+{% endfor %}</pre>
+	<a href="{{ url_for('auth.profile') }}" class="btn btn-primary">I have saved them</a>
+</div>
+{% endblock %}

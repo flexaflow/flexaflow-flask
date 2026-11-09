@@ -25,6 +25,7 @@ copied into extensions/ on the server).
 import importlib
 import json
 import os
+import logging
 import re
 import shutil
 import sys
@@ -51,6 +52,9 @@ MAX_FILES = 3000
 THEME_MARKER = ".flexaflow-extension"
 
 CORE_PREFIXES = ("admin", "static", "uploads", "login", "logout", "api", "post", "page", "category", "tag", "search", "ext")
+
+
+logger = logging.getLogger(__name__)
 
 
 class ExtensionError(Exception):
@@ -97,6 +101,25 @@ def read_manifest(folder: str) -> Dict[str, Any]:
 	return manifest
 
 
+def folder_digest(folder: str) -> str:
+	"""SHA-256 over every file's relative path and bytes (skips caches). Lets an admin compare a package with the author's published value."""
+	import hashlib
+	h = hashlib.sha256()
+	for root, dirs, files in os.walk(folder):
+		dirs[:] = sorted(d for d in dirs if d not in ("__pycache__", ".git"))
+		for name in sorted(files):
+			if name.endswith(".pyc") or name == THEME_MARKER:
+				continue
+			full = os.path.join(root, name)
+			h.update(os.path.relpath(full, folder).replace(os.sep, "/").encode())
+			try:
+				with open(full, "rb") as fh:
+					h.update(fh.read())
+			except OSError:
+				pass
+	return h.hexdigest()
+
+
 def list_installed() -> List[Dict[str, Any]]:
 	"""Manifests of every folder in extensions/ (broken ones are listed with an 'error')."""
 	found = []
@@ -109,6 +132,7 @@ def list_installed() -> List[Dict[str, Any]]:
 		try:
 			manifest = read_manifest(folder)
 			manifest["folder"] = name
+			manifest["digest"] = folder_digest(folder)
 			found.append(manifest)
 		except ExtensionError as e:
 			found.append({"slug": name, "folder": name, "name": name, "version": "?", "description": "", "author": "", "error": str(e), "settings": []})
@@ -211,38 +235,11 @@ class Registration:
 		self.on_activate: List[Callable] = []
 		self.on_deactivate: List[Callable] = []
 		self.themes: List[str] = []
+		self.exporter: Optional[Tuple[Callable, Callable]] = None  # (export_fn, import_fn)
 
 
 class ExtensionAPI:
-	"""
-	The object passed to ``register(api)``. Everything an extension can do goes through it.
-
-	Content model
-		register_directory(key, label=..., singular=..., base_path=..., groups=[(key, label)], ...)
-		register_section_preset(key, {...})        starting points offered on Site > Sections
-
-	Web
-		@api.route("/my-page")                    public page at that address
-		@api.admin_route("/report", capability="manage_pages")   admin page at /admin/ext/<slug>/report
-		api.add_admin_menu("Label", items=[{"label": "...", "url": "..."}] or callable, capability=None)
-		api.add_dashboard_widget(callable)        returns HTML shown on the admin dashboard
-		api.render("page.html", **ctx)            renders templates/page.html of this extension
-		api.static_url("css/site.css")            /ext/<slug>/static/css/site.css
-
-	Behaviour
-		api.add_action("site_head", fn)           fn() -> HTML string (output hooks) or None (event hooks)
-		api.add_filter("name", fn)                fn(value, *args) -> value
-		api.add_template_global("name", fn)       usable in every template
-		api.on_activate(fn) / api.on_deactivate(fn)   run when the admin switches it on/off
-		api.register_demo_content(fn, label=..., description=...)   adds an "Install sample content" button
-
-	Settings
-		api.settings.get("key", default), api.settings.set("key", value)
-		(declare fields in the manifest's "settings" list for an automatic settings page)
-
-	Hooks fired by the core templates: site_head, site_footer, admin_dashboard (each returns HTML).
-	Your own themes/templates can fire more with {{ hook('my_hook') }} and {{ apply_filters('name', value) }}.
-	"""
+	"""The object passed to ``register(api)``. Everything an extension can do goes through it."""
 
 	def __init__(self, manager: "ExtensionManager", registration: Registration):
 		self._manager = manager
@@ -326,6 +323,15 @@ class ExtensionAPI:
 	def register_demo_content(self, fn: Callable, label: str = "Install sample content", description: str = "") -> None:
 		self._reg.demo = {"fn": fn, "label": label, "description": description}
 
+	def register_export(self, export_fn: Callable, import_fn: Callable) -> None:
+		"""Include the extension's own tables in site exports.
+
+		export_fn() returns JSON-serialisable data. import_fn(data, overwrite) stores it again and
+		returns how many records it imported. If the extension is not active when a package is
+		imported, the data waits and is applied the next time it is activated.
+		"""
+		self._reg.exporter = (export_fn, import_fn)
+
 	def activate_theme(self, name: str) -> bool:
 		"""Make a theme (usually one this extension ships in themes/) the site's active theme."""
 		return self._manager.switch_theme(name)
@@ -382,6 +388,44 @@ class ExtensionManager:
 		self.jinja_env: Any = None
 		self.switch_theme: Callable[[str], bool] = lambda name: False
 
+	def export_extension_data(self) -> Dict[str, Any]:
+		"""{slug: data} for every active extension that registered an exporter."""
+		out: Dict[str, Any] = {}
+		for slug, reg in self.registrations.items():
+			if reg.exporter:
+				try:
+					out[slug] = reg.exporter[0]()
+				except Exception as e:
+					logger.error(f"[extensions] export of {slug} failed: {e}")
+		return out
+
+	def _pending_key(self, slug: str) -> str:
+		return f"ext_pending_import_{slug.replace('-', '_')}"
+
+	def import_extension_data(self, slug: str, data: Any, overwrite: bool = False) -> str:
+		"""Apply exported data now if the extension is active, otherwise keep it until it is."""
+		reg = self.registrations.get(slug)
+		if reg is not None and reg.exporter:
+			try:
+				count = reg.exporter[1](data, overwrite)
+				return f"{slug}: {count} record(s) imported."
+			except Exception as e:
+				logger.error(f"[extensions] import for {slug} failed: {e}")
+				return f"{slug}: import failed ({e})."
+		self.write_setting(self._pending_key(slug), {"data": data, "overwrite": overwrite})
+		return f"{slug}: data saved; it is imported when that extension is activated."
+
+	def _apply_pending_import(self, slug: str) -> None:
+		pending = self.read_setting(self._pending_key(slug), None)
+		reg = self.registrations.get(slug)
+		if not isinstance(pending, dict) or reg is None or not reg.exporter:
+			return
+		try:
+			reg.exporter[1](pending.get("data"), bool(pending.get("overwrite")))
+			self.write_setting(self._pending_key(slug), "")
+		except Exception as e:
+			logger.error(f"[extensions] pending import for {slug} failed: {e}")
+
 	def active_slugs(self) -> List[str]:
 		value = self.read_setting("active_extensions", [])
 		return [s for s in value if isinstance(s, str)] if isinstance(value, list) else []
@@ -435,7 +479,7 @@ class ExtensionManager:
 			if isinstance(e, (KeyboardInterrupt, SystemExit)):
 				raise
 			self.errors[slug] = str(e) if isinstance(e, ExtensionError) else f"{type(e).__name__}: {e}"
-			print(f"[extensions] could not load {slug}:\n{traceback.format_exc()}")
+			logger.info(f"[extensions] could not load {slug}:\n{traceback.format_exc()}")
 			self._remove_themes(slug)
 
 	def _unload(self, slug: str) -> None:
@@ -525,7 +569,7 @@ class ExtensionManager:
 				try:
 					items = items() if callable(items) else items
 				except Exception as e:
-					print(f"[extensions] menu of {reg.slug} failed: {e}")
+					logger.error(f"[extensions] menu of {reg.slug} failed: {e}")
 					items = []
 				menus.append({"label": menu["label"], "items": list(items or []), "extension": reg.slug})
 		return menus
@@ -553,7 +597,7 @@ class ExtensionManager:
 				if out:
 					chunks.append(str(out))
 			except Exception as e:
-				print(f"[extensions] action {name} of {slug} failed: {e}")
+				logger.error(f"[extensions] action {name} of {slug} failed: {e}")
 		return Markup("".join(chunks))
 
 	def apply_filters(self, name: str, value: Any, *args: Any) -> Any:
@@ -565,7 +609,7 @@ class ExtensionManager:
 			try:
 				value = fn(value, *args)
 			except Exception as e:
-				print(f"[extensions] filter {name} of {slug} failed: {e}")
+				logger.error(f"[extensions] filter {name} of {slug} failed: {e}")
 		return value
 
 	def dispatch(self, path: str, method: str):
@@ -598,6 +642,7 @@ class ExtensionManager:
 		api = ExtensionAPI(self, reg)
 		for fn in reg.on_activate:
 			fn(api)
+		self._apply_pending_import(slug)
 		self.on_changed()
 
 	def deactivate(self, slug: str) -> None:
@@ -608,7 +653,7 @@ class ExtensionManager:
 				try:
 					fn(api)
 				except Exception as e:
-					print(f"[extensions] on_deactivate of {slug} failed: {e}")
+					logger.error(f"[extensions] on_deactivate of {slug} failed: {e}")
 		self.set_active_slugs([s for s in self.active_slugs() if s != slug])
 		self.sync()
 

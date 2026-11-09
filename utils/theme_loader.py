@@ -1,8 +1,12 @@
 import os
+import logging
 import importlib.util
 import sys
 import shutil
 from typing import Dict, Callable, Tuple
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_theme_functions(theme_name: str) -> Dict[str, Callable]:
@@ -31,7 +35,7 @@ def load_theme_functions(theme_name: str) -> Dict[str, Callable]:
 					
 					theme_functions.update(functions)
 			except Exception as e:
-				print(f"Error loading {filename}: {str(e)}")
+				logger.error(f"Error loading {filename}: {str(e)}")
 				
 	return theme_functions
 	
@@ -42,7 +46,7 @@ def copy_theme_static_files(theme_name: str, main_static_dir: str = 'static') ->
 	theme_static_dir = os.path.join('themes', theme_name, 'static')
 	
 	if not os.path.exists(theme_static_dir):
-		print(f"No static directory found for theme '{theme_name}'")
+		logger.info(f"No static directory found for theme '{theme_name}'")
 		return False
 	
 
@@ -56,11 +60,11 @@ def copy_theme_static_files(theme_name: str, main_static_dir: str = 'static') ->
 			shutil.rmtree(theme_target_dir)
 		
 		shutil.copytree(theme_static_dir, theme_target_dir)
-		print(f"Static files for theme '{theme_name}' copied to '{theme_target_dir}'")
+		logger.info(f"Static files for theme '{theme_name}' copied to '{theme_target_dir}'")
 		return True
 		
 	except Exception as e:
-		print(f"Error copying static files for theme '{theme_name}': {str(e)}")
+		logger.error(f"Error copying static files for theme '{theme_name}': {str(e)}")
 		return False
 
 def load_theme(theme_name: str, main_static_dir: str = 'static') -> Tuple[Dict[str, Callable], bool]:

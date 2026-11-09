@@ -40,6 +40,7 @@ def init(app, manager, current_theme, legacy_xml_import):
 				extensions=wants_ext, themes=wants_theme,
 				selected_extensions=set(form.getlist("ext")) if wants_ext else None,
 				selected_themes=set(form.getlist("theme")) if wants_theme else None,
+				extension_exports=manager.export_extension_data() if form.get("extension_data") == "1" else None,
 			)
 			stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M")
 			return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
@@ -73,6 +74,7 @@ def init(app, manager, current_theme, legacy_xml_import):
 				extensions=form.get("packages_extensions") == "1", themes=form.get("packages_themes") == "1",
 				overwrite=form.get("overwrite") == "1", restore_state=form.get("restore_state") == "1",
 				write_setting=manager.write_setting,
+				extension_importer=manager.import_extension_data,
 			)
 			if form.get("restore_state") == "1":
 				manager.sync(force=True)

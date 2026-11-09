@@ -1,0 +1,17 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Compare versions{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-0">{{ rev.created_at.strftime('%Y-%m-%d %H:%M') }} UTC compared with the current version</h1>
+	<a href="{{ url_for('features.history', kind=rev.kind, obj_id=rev.object_id) }}" class="btn btn-outline-secondary btn-sm">All versions</a>
+</div>
+{% if title_changed %}<p><strong>Title then:</strong> {{ rev.title }}<br><strong>Title now:</strong> {{ obj.title }}</p>{% endif %}
+<div class="card mb-3"><div class="card-body" style="font-family:monospace;font-size:.9rem;white-space:pre-wrap">
+	<div class="small text-muted mb-2"><span class="bg-danger-subtle px-1">- only in this old version</span> <span class="bg-success-subtle px-1">+ only in the current version</span></div>
+	{{ diff }}
+</div></div>
+<form method="post" action="{{ url_for('features.revision_restore', rev_id=rev.id) }}" onsubmit="return confirm('Restore this version?')">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<button class="btn btn-primary">Restore this version</button>
+</form>
+{% endblock %}

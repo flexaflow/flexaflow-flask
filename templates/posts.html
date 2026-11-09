@@ -85,13 +85,13 @@
 			{% for p in result.records %}
 				<tr>
 					<td>{% if p.can_modify %}<input type="checkbox" class="row-check" name="ids" value="{{ p.id }}" aria-label="Select {{ p.title }}">{% endif %}</td>
-					<td><a href="{{ url_for('edit_post', slug=p.slug) }}"><strong>{{ p.title }}</strong></a><br><small class="text-muted">{{ p.public_url }}</small></td>
+					<td><a href="{{ url_for('editor.edit_post', slug=p.slug) }}"><strong>{{ p.title }}</strong></a><br><small class="text-muted">{{ p.public_url }}</small></td>
 					<td class="small">{{ p.author_name }}</td>
 					<td class="small">{{ p.category.name if p.category else '—' }}</td>
 					<td><span class="badge text-bg-{{ 'success' if p.status == 'published' else 'warning' }}">{{ 'Published' if p.status == 'published' else 'Draft' }}</span></td>
 					<td class="small text-muted text-nowrap">{{ (p.date|string)[:10] }}</td>
 					<td class="text-end text-nowrap">
-						<a href="{{ url_for('edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+						<a href="{{ url_for('editor.edit_post', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
 						{% if p.status == 'published' %}<a href="{{ p.public_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>{% endif %}
 					</td>
 				</tr>

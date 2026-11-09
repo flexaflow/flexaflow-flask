@@ -10,6 +10,7 @@ import io
 from urllib.parse import urlencode
 import json
 import os
+import logging
 import uuid
 
 from flask import (
@@ -25,6 +26,9 @@ from data_store import db_manager, get_categories
 bp = Blueprint("content", __name__)
 
 DOCUMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "zip", "jpg", "jpeg", "png", "webp"}
+
+
+logger = logging.getLogger(__name__)
 
 
 def _sitemap():

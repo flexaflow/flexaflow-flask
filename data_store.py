@@ -1,5 +1,7 @@
 
 import os
+import logging
+import re
 import json
 import datetime
 from datetime import timedelta
@@ -17,11 +19,13 @@ from sqlalchemy import (
 	event,
 	inspect,
 	text,
+	or_,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
+from crypto_utils import EncryptedString, encrypt_secret, is_encrypted
 
 load_dotenv()
 
@@ -88,6 +92,9 @@ post_tags = Table(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def decode_fields(raw: Optional[str]) -> Dict[str, Any]:
 	"""Decode the JSON custom-field blob stored on a page (always returns a dict)."""
 	if not raw:
@@ -131,31 +138,7 @@ class Sitemap(Base):
 
 
 class Media(Base):
-	"""
-	Media Model for storing uploaded files and their metadata.
-	
-	Attributes:
-		id (int): Primary key
-		filename (str): Generated unique filename
-		original_filename (str): Original uploaded filename
-		mime_type (str): File MIME type for content handling
-		file_size (int): Size in bytes
-		width (int): Image width in pixels
-		height (int): Image height in pixels
-		alt_text (str): Alternative text for accessibility
-		caption (str): Optional media caption
-		title (str): Display title
-		description (str): Detailed description
-		thumbnail (str): Thumbnail filename
-		created_at (datetime): Creation timestamp
-		updated_at (datetime): Last update timestamp
-	
-	Features:
-		- Automatic thumbnail tracking
-		- Metadata storage
-		- Timestamp management
-		- Image dimension tracking
-	"""    
+	"""Media Model for storing uploaded files and their metadata.  Attributes: id (int): Primary key filename (str): Generated unique filename original_filename (str): Original uploaded filename mime_type (str): File MIME type for content handling file_size (int): Size in bytes width (int): Image width..."""
 	__tablename__ = "media"
 
 	id = Column(Integer, primary_key=True)
@@ -174,54 +157,6 @@ class Media(Base):
 	updated_at = Column(
 		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
 	)
-
-
-class AdminSetup(Base):
-	"""
-	AdminSetup Model for managing admin user configuration and 2FA settings.
-	
-	Attributes:
-		id (int): Primary key
-		is_configured (bool): Whether initial setup is complete
-		username (str): Admin username, must be unique
-		password (str): Hashed password string
-		email (str): Admin email address
-		two_fa_secret (str): OTP secret for 2FA
-		two_fa_enabled (bool): Whether 2FA is active
-		created_at (datetime): Account creation time
-		updated_at (datetime): Last modification time
-		
-	Features:
-		- Two-factor authentication support
-		- Secure password storage
-		- Setup state tracking
-		- Timestamp management
-		- Email verification
-		
-	Security:
-		- Unique username enforcement
-		- Optional 2FA
-		- Password hashing required
-		- Update tracking
-	"""    
-	__tablename__ = "admin_setup"
-
-	id = Column(Integer, primary_key=True)
-	is_configured = Column(Boolean, default=False)
-	username = Column(String(255), unique=True)
-	password = Column(String(255))
-	email = Column(String(255))
-	two_fa_secret = Column(String(255), nullable=True)
-	two_fa_enabled = Column(Boolean, default=False, server_default="0")
-	created_at = Column(DateTime, default=datetime.datetime.utcnow)
-	updated_at = Column(
-		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
-	)
-
-	@property
-	def has_2fa(self):
-		"""Check if 2FA is properly configured and enabled"""
-		return self.two_fa_enabled and self.two_fa_secret is not None
 
 
 ROLE_ADMINISTRATOR = "administrator"
@@ -254,8 +189,10 @@ class User(Base):
 	password_hash = Column(String(255), nullable=False)
 	role = Column(String(20), nullable=False, default=ROLE_CONTRIBUTOR)
 	is_active = Column(Boolean, nullable=False, default=True)
-	two_fa_secret = Column(String(255), nullable=True)
+	two_fa_secret = Column(EncryptedString(512), nullable=True)
 	two_fa_enabled = Column(Boolean, nullable=False, default=False)
+	two_fa_recovery = Column(Text, nullable=True)  # JSON list of password hashes
+	session_version = Column(Integer, nullable=False, default=0, server_default="0")
 	last_login_at = Column(DateTime, nullable=True)
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
 	updated_at = Column(
@@ -271,70 +208,91 @@ class User(Base):
 			"role": self.role,
 			"is_active": bool(self.is_active),
 			"two_fa_enabled": bool(self.two_fa_enabled and self.two_fa_secret),
+			"session_version": self.session_version or 0,
 			"last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
 			"created_at": self.created_at.isoformat() if self.created_at else None,
 		}
 		if include_secrets:
 			data["password_hash"] = self.password_hash
 			data["two_fa_secret"] = self.two_fa_secret
+			data["two_fa_recovery"] = self.two_fa_recovery
 		return data
 
 
+class LoginAttempt(Base):
+	"""One failed login or 2FA attempt. Stored in the database so limits survive restarts and multiple workers."""
+
+	__tablename__ = "login_attempts"
+
+	id = Column(Integer, primary_key=True)
+	kind = Column(String(10), nullable=False, index=True)  # "login" or "totp"
+	key = Column(String(255), nullable=False, index=True)  # "ip:<addr>", "user:<name>|<addr>", "totp:<user id>"
+	created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class Revision(Base):
+	"""A saved copy of a page or post, taken before each edit (and by editor autosave)."""
+
+	__tablename__ = "revisions"
+
+	id = Column(Integer, primary_key=True)
+	kind = Column(String(10), nullable=False, index=True)  # "page" or "post"
+	object_id = Column(Integer, nullable=False, index=True)
+	title = Column(String(255))
+	content = Column(Text)
+	summary = Column(Text)  # page description / post excerpt
+	status = Column(String(50))
+	is_autosave = Column(Boolean, nullable=False, default=False)
+	author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class Redirect(Base):
+	"""Old path -> new path. Created automatically when a slug changes; also editable by hand."""
+
+	__tablename__ = "redirects"
+
+	id = Column(Integer, primary_key=True)
+	source = Column(String(500), unique=True, nullable=False, index=True)
+	target = Column(String(1000), nullable=False)
+	permanent = Column(Boolean, nullable=False, default=True)
+	hits = Column(Integer, nullable=False, default=0)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ContactMessage(Base):
+	"""A message sent through the public contact form."""
+
+	__tablename__ = "contact_messages"
+
+	id = Column(Integer, primary_key=True)
+	name = Column(String(200), nullable=False)
+	email = Column(String(255), nullable=False)
+	subject = Column(String(300))
+	message = Column(Text, nullable=False)
+	ip = Column(String(64))
+	is_read = Column(Boolean, nullable=False, default=False)
+	emailed = Column(Boolean, nullable=False, default=False)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class Comment(Base):
+	"""A reader comment on a post. Held as "pending" until a moderator approves it."""
+
+	__tablename__ = "comments"
+
+	id = Column(Integer, primary_key=True)
+	post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+	author_name = Column(String(150), nullable=False)
+	author_email = Column(String(255))
+	body = Column(Text, nullable=False)
+	status = Column(String(20), nullable=False, default="pending", index=True)  # pending | approved | spam
+	ip = Column(String(64))
+	created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
 class Page(Base):
-	"""
-	
-	Features:
-		- Draft system
-		- Version tracking
-		- URL routing
-		- Meta descriptions
-		- Custom templates
-		
-	Attributes:
-		id (int): Primary key and unique identifier
-		slug (str): URL-friendly unique identifier
-			- Used in page URLs
-			- Must be unique
-			- Auto-generated from title
-		title (str): Page title 
-			- Required
-			- Used in navigation
-		content (str): Main page content
-			- Supports HTML
-			- Markdown rendering
-			- Rich text
-		description (str): Meta description
-			- Search snippets
-			- Social sharing
-		status (str): Publication status
-			- 'published': Live and visible
-			- 'draft': Work in progress
-		created_at (datetime): Creation timestamp
-		updated_at (datetime): Last modification time
-		
-	Common Pages:
-		- Homepage
-		- About
-		- Contact
-		- Privacy Policy
-		- Terms of Service
-		
-	Usage:
-		# Create new page
-		page = Page(
-			slug='about',
-			title='About Us',
-			content='Company history...',
-			status='published'
-		)
-		
-		# Create draft
-		draft = Page(
-			slug='new-services',
-			title='Our Services',
-			status='draft'
-		)
-	"""
+	"""Features: - Draft system - Version tracking - URL routing - Meta descriptions - Custom templates  Attributes: id (int): Primary key and unique identifier slug (str): URL-friendly unique identifier - Used in page URLs - Must be unique - Auto-generated from title title (str): Page title - Required..."""
 
 	__tablename__ = "pages"
 
@@ -347,6 +305,8 @@ class Page(Base):
 	template = Column(String(100), nullable=False, default="default")
 	fields = Column(Text, nullable=True)
 	author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+	publish_at = Column(DateTime, nullable=True, index=True)  # set with status "scheduled"
+	seo = Column(Text, nullable=True)  # JSON: title, description, canonical, og_image
 	created_at = Column(DateTime, default=datetime.datetime.utcnow)
 	updated_at = Column(
 		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
@@ -354,6 +314,8 @@ class Page(Base):
 
 	def to_dict(self):
 		return {
+			"publish_at": self.publish_at.isoformat() if self.publish_at else None,
+			"seo": decode_fields(self.seo),
 			"id": self.id,
 			"slug": self.slug,
 			"title": self.title,
@@ -370,59 +332,7 @@ class Page(Base):
 
 class Post(Base):
 
-	"""
-	blog post or article.
-	
-	Features:
-		- SEO-friendly slugs
-		- Content management
-		- Draft support
-		- Categories and tags
-		- Timestamps
-		- URL routing
-		- Rich relationships
-		- Data validation
-		
-	Attributes:
-		id (int): Primary key and unique identifier
-		slug (str): URL-friendly unique identifier
-		title (str): Post title, required
-		content (str): Full post content
-		excerpt (str): Brief summary
-		status (str): Publication status
-			- 'published': Live and visible
-			- 'draft': Work in progress
-		category_id (int): Foreign key to Category
-		created_at (datetime): Creation timestamp
-		updated_at (datetime): Last modification time
-		published_at (datetime): When post went live
-		
-	Relationships:
-		category: Parent category (many-to-one)
-			- Optional categorization
-			- Hierarchical organization
-			- Navigation support
-			
-		tags: Associated tags (many-to-many)
-			- Flexible tagging
-			- Multiple tags per post
-			- Tag cloud support
-			
-	Usage:
-		# Create a new post
-		post = Post(
-			slug='hello-world',
-			title='Hello World',
-			content='Welcome to my blog!',
-			status='published'
-		)
-		
-		# Add tags
-		post.tags.append(Tag(name='welcome'))
-		
-		# Set category
-		post.category = Category(name='General')
-	"""
+	"""blog post or article.  Features: - SEO-friendly slugs - Content management - Draft support - Categories and tags - Timestamps - URL routing - Rich relationships - Data validation  Attributes: id (int): Primary key and unique identifier slug (str): URL-friendly unique identifier title (str): Post..."""
 
 	__tablename__ = "posts"
 
@@ -441,12 +351,16 @@ class Post(Base):
 	published_at = Column(DateTime)
 	cover_image = Column(String(1000), nullable=True)
 	meta = Column(Text, nullable=True)
+	publish_at = Column(DateTime, nullable=True, index=True)  # set with status "scheduled"
+	seo = Column(Text, nullable=True)  # JSON: title, description, canonical, og_image
 
 	category = relationship("Category", back_populates="posts")
 	tags = relationship("Tag", secondary=post_tags, back_populates="posts")
 
 	def to_dict(self):
 		return {
+			"publish_at": self.publish_at.isoformat() if self.publish_at else None,
+			"seo": decode_fields(self.seo),
 			"author_id": self.author_id,
 			"id": self.id,
 			"slug": self.slug,
@@ -468,50 +382,7 @@ class Post(Base):
 
 
 class Category(Base):
-	"""
-	Content category for organizing posts.
-	
-	Features:
-		- Hierarchical organization
-		- SEO-friendly URLs
-		- Post aggregation
-		- Navigation support
-		- Post counting
-		- Archive views
-		
-	Attributes:
-		id (int): Primary key and unique identifier
-		name (str): Display name of category
-		slug (str): URL-friendly unique identifier
-		description (str): Detailed description
-		created_at (datetime): Creation timestamp
-		
-	Relationships:
-		posts: Child posts (one-to-many)
-			- Reverse lookup
-			- Automatic cleanup
-			- Count tracking
-			- Filtering support
-			
-	Indexing:
-		- Primary key (id)
-		- Unique slug
-		- Name lookup
-		
-	Usage:
-		# Create new category
-		tech = Category(
-			name='Technology',
-			slug='tech',
-			description='Tech posts'
-		)
-		
-		# Add posts
-		tech.posts.append(new_post)
-		  
-		# Get post count
-		count = len(tech.posts)
-	"""        
+	"""Content category for organizing posts.  Features: - Hierarchical organization - SEO-friendly URLs - Post aggregation - Navigation support - Post counting - Archive views  Attributes: id (int): Primary key and unique identifier name (str): Display name of category slug (str): URL-friendly unique..."""
 	__tablename__ = "categories"
 
 	id = Column(Integer, primary_key=True, index=True)
@@ -546,47 +417,7 @@ class Category(Base):
 
 
 class Tag(Base):
-	"""
-	Content tag for flexible post organization.
-	
-	Features:
-		- Post tagging
-		- Tag clouds
-		- Related content
-		- Search enhancement
-		- Content filtering
-		- Usage tracking
-		
-	Attributes:
-		id (int): Primary key and unique identifier
-		name (str): Tag name, must be unique
-		created_at (datetime): Creation timestamp
-		
-	Relationships:
-		posts: Tagged posts (many-to-many)
-			- Bidirectional relationship
-			- Automatic cleanup
-			- Count tracking
-			- Post filtering
-			
-	Indexing:
-		- Primary key (id)
-		- Unique name
-		- Fast lookups
-		
-	Usage:
-		# Create new tag
-		tag = Tag(name='python')
-		
-		# Add to post
-		post.tags.append(tag)
-		
-		# Get usage count
-		count = len(tag.posts)
-		
-		# Get related posts
-		related = [p for p in tag.posts if p.status == 'published']
-	"""    
+	"""Content tag for flexible post organization.  Features: - Post tagging - Tag clouds - Related content - Search enhancement - Content filtering - Usage tracking  Attributes: id (int): Primary key and unique identifier name (str): Tag name, must be unique created_at (datetime): Creation timestamp ..."""
 	__tablename__ = "tags"
 
 	id = Column(Integer, primary_key=True, index=True)
@@ -625,85 +456,7 @@ class SiteSetting(Base):
 
 
 class MediaLibrary(Base):
-	"""
-	Model representing media files in the CMS library.
-	
-	Features:
-		- File management 
-		- Image optimization
-		- Thumbnail generation
-		- Metadata tracking
-		- MIME type handling
-		
-	Attributes:
-		id (int): Primary key and unique identifier
-		filename (str): System filename on disk
-			- Generated unique name
-			- Includes extension
-			- Path management
-		original_filename (str): Original upload name
-			- User-friendly name
-			- File history
-		mime_type (str): Content type
-			- Security validation
-			- Browser handling
-			- Download headers
-		file_size (int): Size in bytes
-			- Storage tracking
-			- Download info
-			- Quota management
-		width (int): Image width in pixels
-			- Image sizing
-			- Responsive display
-			- Thumbnail calc
-		height (int): Image height in pixels
-			- Aspect ratios
-			- Layout planning
-			- Cropping
-		alt_text (str): Accessibility text
-			- Screen readers
-			- SEO compliance
-			- Fallback display
-		caption (str): Display caption
-			- Image galleries
-			- Visual context
-			- Citations
-		title (str): Media title
-			- Search indexing
-			- Organization
-		description (str): Detailed description
-			- SEO content
-			- Media context
-			- Search indexing
-		thumbnail (str): Thumbnail filename
-			- Preview images
-			- Gallery display
-			- Media grid
-		uploaded_at (datetime): Upload timestamp
-			- File tracking
-			- Sort ordering
-			- Archive management
-			
-	File Handling:
-		- Automatic thumbnail creation
-		- MIME validation
-		- Dimension extraction
-		- Size calculation
-		- Extension validation
-		
-	Usage:
-		# Add new media
-		media = MediaLibrary(
-			filename='abc123.jpg',
-			original_filename='photo.jpg',
-			mime_type='image/jpeg',
-			width=800,
-			height=600
-		)
-		
-		# Generate thumbnail
-		media.thumbnail = 'thumb_abc123.jpg'
-	"""
+	"""Model representing media files in the CMS library.  Features: - File management - Image optimization - Thumbnail generation - Metadata tracking - MIME type handling  Attributes: id (int): Primary key and unique identifier filename (str): System filename on disk - Generated unique name - Includes..."""
 	__tablename__ = "media_library"
 
 	id = Column(Integer, primary_key=True)
@@ -781,35 +534,7 @@ class Entry(Base):
 
 
 class DatabaseManager:
-	"""
-	Core database management class handling all database operations.
-	
-	This class provides a centralized interface for:
-	- Database initialization and setup
-	- Session management
-	- Table creation and updates
-	- Media library operations
-	- User management
-	- Content CRUD operations
-	
-	Features:
-		- Automatic table creation
-		- Session pooling
-		- Transaction management
-		- Error handling
-		- Connection management
-		
-	Usage:
-		manager = DatabaseManager()
-		manager.create_tables()
-		manager.initialize_default_data()
-		
-	Security:
-		- SQL injection prevention
-		- Connection pooling
-		- Transaction isolation
-		- Error logging
-	"""
+	"""Core database management class handling all database operations.  This class provides a centralized interface for: - Database initialization and setup - Session management - Table creation and updates - Media library operations - User management - Content CRUD operations  Features: - Automatic..."""
 
 	def __init__(self):
 		self.engine = engine
@@ -819,86 +544,71 @@ class DatabaseManager:
 
 	def create_tables(self):
 		"""Create all tables and bring older databases up to the current schema."""
-		Base.metadata.create_all(bind=self.engine)
-		self._ensure_columns()
-		self._migrate_legacy_admin()
+		self._run_migrations()
+		self._encrypt_legacy_secrets()
 
-	def _ensure_columns(self):
-		"""
-		Additive migration: create_all() does not add columns to existing
-		tables, so add any missing ones. Works on SQLite and MySQL.
-		"""
-		additions = {
-			"pages": [
-				("template", "VARCHAR(100) NOT NULL DEFAULT 'default'"),
-				("fields", "TEXT"),
-				("author_id", "INTEGER"),
-			],
-			"posts": [
-				("author_id", "INTEGER"),
-				("cover_image", "VARCHAR(1000)"),
-				("meta", "TEXT"),
-			],
-			"categories": [
-				("section_path", "VARCHAR(100)"),
-				("singular_name", "VARCHAR(100)"),
-				("fields_schema", "TEXT"),
-				("sort_order", "INTEGER DEFAULT 0"),
-				("date_label", "VARCHAR(60)"),
-				("show_time", "BOOLEAN DEFAULT 0"),
-			],
-		}
+	def _run_migrations(self):
+		"""Bring the database to the latest schema with Alembic (see migrations/versions)."""
+		from alembic import command
+		from alembic.config import Config
+		base = os.path.dirname(os.path.abspath(__file__))
+		cfg = Config()
+		cfg.set_main_option("script_location", os.path.join(base, "migrations"))
 		try:
-			insp = inspect(self.engine)
-			tables = set(insp.get_table_names())
 			with self.engine.begin() as conn:
-				for table, columns in additions.items():
-					if table not in tables:
-						continue
-					existing = {c["name"] for c in insp.get_columns(table)}
-					for name, ddl in columns:
-						if name not in existing:
-							conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
-		except SQLAlchemyError as e:
-			print(f"Schema migration warning: {str(e)}")
+				cfg.attributes["connection"] = conn
+				command.upgrade(cfg, "head")
+		except Exception as e:  # keep the site up; the error is logged for the operator
+			logger.error("Database migration failed: %s", e)
+			raise
 
-	def _migrate_legacy_admin(self):
-		"""
-		Older versions stored one admin in admin_setup. If the users table is
-		empty and that row is configured, copy it in as an administrator so
-		existing installs keep working.
-		"""
+	def _encrypt_legacy_secrets(self):
+		"""Encrypt any 2FA secrets still stored as plain text by older versions."""
+		try:
+			with self.engine.begin() as conn:
+				rows = conn.execute(text(
+					"SELECT id, two_fa_secret FROM users WHERE two_fa_secret IS NOT NULL AND two_fa_secret <> ''")).fetchall()
+				for row in rows:
+					if not is_encrypted(row[1]):
+						conn.execute(text("UPDATE users SET two_fa_secret = :s WHERE id = :i"),
+						             {"s": encrypt_secret(row[1]), "i": row[0]})
+		except SQLAlchemyError as e:
+			logger.info(f"2FA secret encryption warning: {e}")
+
+	# ---- login throttling ------------------------------------------------
+	def record_attempt(self, kind: str, key: str) -> None:
 		db = self.get_session()
 		try:
-			if db.query(User).first() is not None:
-				return
-			legacy = db.query(AdminSetup).first()
-			if legacy is None or not legacy.is_configured or not legacy.username:
-				return
-			admin = User(
-				username=legacy.username,
-				email=legacy.email or f"{legacy.username}@localhost",
-				password_hash=legacy.password,
-				role=ROLE_ADMINISTRATOR,
-				two_fa_secret=legacy.two_fa_secret if legacy.two_fa_enabled else None,
-				two_fa_enabled=bool(legacy.two_fa_enabled and legacy.two_fa_secret),
-			)
-			db.add(admin)
-			db.flush()
-			db.query(Page).filter(Page.author_id.is_(None)).update(
-				{Page.author_id: admin.id}, synchronize_session=False
-			)
-			db.query(Post).filter(Post.author_id.is_(None)).update(
-				{Post.author_id: admin.id}, synchronize_session=False
-			)
+			db.add(LoginAttempt(kind=kind, key=key))
+			cutoff = datetime.datetime.utcnow() - timedelta(hours=1)
+			db.query(LoginAttempt).filter(LoginAttempt.created_at < cutoff).delete()
 			db.commit()
-			print(f"Migrated legacy admin '{legacy.username}' to the users table.")
-		except SQLAlchemyError as e:
+		except SQLAlchemyError:
 			db.rollback()
-			print(f"Legacy admin migration warning: {str(e)}")
 		finally:
 			db.close()
 
+	def recent_attempts(self, kind: str, key: str, window_seconds: int) -> List[datetime.datetime]:
+		"""Timestamps (newest last) of attempts for this key inside the window."""
+		db = self.get_session()
+		try:
+			cutoff = datetime.datetime.utcnow() - timedelta(seconds=window_seconds)
+			rows = (db.query(LoginAttempt.created_at)
+			        .filter(LoginAttempt.kind == kind, LoginAttempt.key == key, LoginAttempt.created_at >= cutoff)
+			        .order_by(LoginAttempt.created_at).all())
+			return [r[0] for r in rows]
+		finally:
+			db.close()
+
+	def clear_attempts(self, kind: str, key: str) -> None:
+		db = self.get_session()
+		try:
+			db.query(LoginAttempt).filter(LoginAttempt.kind == kind, LoginAttempt.key == key).delete()
+			db.commit()
+		except SQLAlchemyError:
+			db.rollback()
+		finally:
+			db.close()
 
 	def count_users(self) -> int:
 		db = self.get_session()
@@ -978,7 +688,8 @@ class DatabaseManager:
 	def update_user(self, user_id: int, **changes) -> Dict[str, Any]:
 		"""Update allowed user columns. Raises ValueError on problems."""
 		allowed = {"email", "display_name", "password_hash", "role", "is_active",
-		           "two_fa_secret", "two_fa_enabled", "last_login_at"}
+		           "two_fa_secret", "two_fa_enabled", "last_login_at",
+		           "two_fa_recovery", "session_version"}
 		unknown = set(changes) - allowed
 		if unknown:
 			raise ValueError(f"Cannot update fields: {', '.join(sorted(unknown))}")
@@ -1022,7 +733,7 @@ class DatabaseManager:
 			return True
 		except SQLAlchemyError as e:
 			db.rollback()
-			print(f"Error deleting user: {str(e)}")
+			logger.error(f"Error deleting user: {str(e)}")
 			return False
 		finally:
 			db.close()
@@ -1046,62 +757,6 @@ class DatabaseManager:
 	def is_setup_complete(self) -> bool:
 		"""The CMS is usable once at least one account exists (created via CLI)."""
 		return self.count_users() > 0
-
-	def complete_setup(
-		self,
-		username: str,
-		password: str,
-		email: str,
-		enable_2fa: bool = False,
-		two_fa_secret: str = None,
-	) -> bool:
-		"""Complete the initial setup"""
-		db = self.get_session()
-		try:
-			admin_setup = db.query(AdminSetup).first()
-			if admin_setup is None:
-				admin_setup = AdminSetup()
-
-			admin_setup.username = username
-			admin_setup.password = password
-			admin_setup.email = email
-			admin_setup.is_configured = True
-			admin_setup.two_fa_enabled = enable_2fa
-			if enable_2fa and two_fa_secret:
-				admin_setup.two_fa_secret = two_fa_secret
-
-			db.add(admin_setup)
-			db.commit()
-			return True
-		except SQLAlchemyError as e:
-			db.rollback()
-			print(f"Error completing setup: {str(e)}")
-			return False
-		finally:
-			db.close()
-
-	def get_admin_setup(self) -> Optional[Dict[str, Any]]:
-		"""Get admin setup information"""
-		db = self.get_session()
-		try:
-			admin_setup = db.query(AdminSetup).first()
-			if admin_setup and admin_setup.is_configured:
-				return {
-					"username": admin_setup.username,
-					"password": admin_setup.password,
-					"email": admin_setup.email,
-					"two_fa_enabled": admin_setup.has_2fa,
-					"two_fa_secret": (
-						admin_setup.two_fa_secret if admin_setup.has_2fa else None
-					),
-					"is_configured": True,
-				}
-			return None
-		except SQLAlchemyError as e:
-			print(f"Error getting admin setup: {str(e)}")
-			return None
-		finally:
-			db.close()
 
 	def initialize_default_data(self):
 		"""Initialize database with default data"""
@@ -1167,69 +822,12 @@ class DatabaseManager:
 			db.commit()
 		except Exception as e:
 			db.rollback()
-			print(f"Error initializing default data: {str(e)}")
+			logger.error(f"Error initializing default data: {str(e)}")
 		finally:
 			db.close()
 
 	def add_media(self, media_data):
-		"""
-		Add a new media item to the media library.
-
-		Features:
-			- Metadata extraction
-			- Thumbnail handling
-			- URL generation
-			- Transaction safety
-			- Error recovery
-			
-		Args:
-			media_data (dict): Media item details containing:
-				- filename: Generated unique filename (str, required)
-				- original_filename: Original upload name (str, required)
-				- mime_type: File content type (str, optional)
-				- file_size: Size in bytes (int, optional)
-				- width: Image width (int, optional)
-				- height: Image height (optional)
-				- alt_text: Accessibility text (str, optional)
-				- caption: Display caption (str, optional)
-				- title: Media title (str, optional)
-				- description: Long description (str, optional)
-				- thumbnail: Thumbnail filename (str, optional)
-				
-		Returns:
-			dict: Created media item data including:
-				- All input fields
-				- id: Generated database ID
-				- created_at: Creation timestamp
-				- url: Full media URL 
-				- thumbnail_url: Full thumbnail URL (if exists)
-			None: If operation fails
-			
-		Processing:
-			1. Creates Media record
-			2. Stores metadata
-			3. Generates URLs
-			4. Handles transactions
-			5. Validates data
-			
-		Error Handling:
-			- Missing required fields
-			- Invalid field types
-			- Database constraints
-			- Transaction rollback
-			- Resource cleanup
-			
-		Usage:
-			media = add_media({
-				'filename': 'abc123.jpg',
-				'original_filename': 'photo.jpg',
-				'mime_type': 'image/jpeg',
-				'width': 800,
-				'height': 600
-			})
-			if media:
-				print(f"Created media: {media['url']}")
-		"""
+		"""Add a new media item to the media library."""
 		db = self.get_session()
 		try:
 			media = Media(
@@ -1258,84 +856,13 @@ class DatabaseManager:
 			return result
 		except Exception as e:
 			db.rollback()
-			print(f"Error adding media: {str(e)}")
+			logger.error(f"Error adding media: {str(e)}")
 			return None
 		finally:
 			db.close()
 
 	def get_media_library(self, page=1, per_page=20, search=None):
-		"""
-		Retrieve media library items with pagination and search.
-		
-		Features:
-			- Full-text search
-			- Smart pagination 
-			- Sorting options
-			- URL generation
-			- Metadata formatting
-			- Performance optimization
-			
-		Args:
-			page (int): Page number to retrieve (default: 1)
-			per_page (int): Items per page (default: 20)
-			search (str): Search query for filtering (optional)
-				- Searches filename, title, and description
-				- Case-insensitive partial matches
-				- Multiple term support
-				
-		Returns:
-			dict: Media library data containing:
-				items: List of media items, each with:
-					- id: Media ID
-					- filename: Stored filename
-					- original_filename: Upload name
-					- mime_type: Content type
-					- file_size: Size in bytes
-					- width: Image width
-					- height: Image height
-					- alt_text: Alt text
-					- caption: Display caption
-					- title: Media title
-					- description: Full description
-					- thumbnail: Thumbnail name
-					- created_at: Creation time
-					- updated_at: Last modified
-					- url: Full media URL
-					- thumbnail_url: Full thumbnail URL
-				total: Total items count
-				page: Current page number
-				total_pages: Total available pages
-				per_page: Items per page
-			None: If operation fails
-			
-		Processing:
-			1. Builds search query if needed
-			2. Calculates pagination
-			3. Retrieves page slice
-			4. Formats response data
-			5. Generates URLs
-			
-		Performance:
-			- Efficient pagination
-			- Query optimization
-			- Connection pooling
-			- Resource cleanup
-			
-		Usage:
-			# Get first page
-			first_page = get_media_library()
-			
-			# Search with pagination
-			results = get_media_library(
-				page=2,
-				per_page=10,
-				search='banner'
-			)
-			
-			# Display results
-			for item in results['items']:
-				print(f"{item['title']}: {item['url']}")
-		"""
+		"""Retrieve media library items with pagination and search.  Features: - Full-text search - Smart pagination - Sorting options - URL generation - Metadata formatting - Performance optimization  Args: page (int): Page number to retrieve (default: 1) per_page (int): Items per page (default: 20)..."""
 		db = self.get_session()
 		try:
 			query = db.query(Media)
@@ -1397,7 +924,7 @@ class DatabaseManager:
 			}
 
 		except Exception as e:
-			print(f"Error getting media library: {str(e)}")
+			logger.error(f"Error getting media library: {str(e)}")
 			return None
 		finally:
 			db.close()
@@ -1448,65 +975,13 @@ class DatabaseManager:
 			return False
 		except Exception as e:
 			db.rollback()
-			print(f"Error updating media: {str(e)}")
+			logger.error(f"Error updating media: {str(e)}")
 			return False
 		finally:
 			db.close()
 
 	def delete_media(self, media_id):
-		"""
-		Delete a media item and its associated files.
-		
-		Features:
-			- Database cleanup
-			- File system cleanup
-			- Transaction safety
-			- Resource management
-			- Error recovery
-			
-		Args:
-			media_id (int): ID of the media item to delete
-			
-		Returns:
-			bool: True if deletion successful, False otherwise
-			
-		Processing:
-			1. Fetches media record
-			2. Stores file references
-			3. Deletes database record
-			4. Removes main media file
-			5. Removes thumbnail file
-			6. Handles failures gracefully
-			
-		Security:
-			- Transaction isolation
-			- File path validation
-			- Error containment
-			- Resource cleanup
-			- Access validation
-			
-		File System:
-			- Handles main media file
-			- Manages thumbnails
-			- Validates paths
-			- Checks permissions
-			- Recovers from errors
-			
-		Error Handling:
-			- Database errors
-			- File system errors
-			- Missing files
-			- Permission issues
-			- Resource cleanup
-			
-		Usage:
-			# Delete a media item
-			success = delete_media(123)
-			if success:
-				print("Media deleted successfully")
-			else:
-				print("Failed to delete media")
-		"""
+		"""Delete a media item and its associated files.  Features: - Database cleanup - File system cleanup - Transaction safety - Resource management - Error recovery  Args: media_id (int): ID of the media item to delete  Returns: bool: True if deletion successful, False otherwise  Processing: 1. Fetches..."""
 		db = self.get_session()
 		try:
 			media = db.query(Media).filter(Media.id == media_id).first()
@@ -1528,13 +1003,13 @@ class DatabaseManager:
 						if os.path.exists(thumb_path):
 							os.remove(thumb_path)
 				except Exception as e:
-					print(f"Error deleting media files: {str(e)}")
+					logger.error(f"Error deleting media files: {str(e)}")
 
 				return True
 			return False
 		except Exception as e:
 			db.rollback()
-			print(f"Error deleting media: {str(e)}")
+			logger.error(f"Error deleting media: {str(e)}")
 			return False
 		finally:
 			db.close()
@@ -1547,7 +1022,7 @@ class DatabaseManager:
 			sitemap = db.query(Sitemap).first()
 			return sitemap.content if sitemap else None
 		except SQLAlchemyError as e:
-			print(f"Error getting sitemap: {str(e)}")
+			logger.error(f"Error getting sitemap: {str(e)}")
 			return None
 		finally:
 			db.close()
@@ -1568,7 +1043,7 @@ class DatabaseManager:
 			return True
 		except SQLAlchemyError as e:
 			db.rollback()
-			print(f"Error updating sitemap: {str(e)}")
+			logger.error(f"Error updating sitemap: {str(e)}")
 			return False
 		finally:
 			db.close()
@@ -1580,40 +1055,13 @@ db_manager.initialize_default_data()
 
 
 def get_pages() -> Dict[str, Any]:
-	"""
-	Retrieve all published pages from the database.
-	
-	Returns:
-		Dict[str, Any]: Dictionary of pages where:
-			- key: page slug
-			- value: page data dictionary containing:
-				- title: page title
-				- content: page content
-				- description: meta description
-				- status: publication status
-				- timestamps: created/updated times
-				
-	Error Handling:
-		- Returns empty dict on database errors
-		- Logs error messages
-		- Ensures session cleanup
-		
-	Performance:
-		- Uses session pooling
-		- Automatic connection cleanup
-		- Efficient dictionary comprehension
-		
-	Usage:
-		pages = get_pages()
-		for slug, page in pages.items():
-			print(f"{page['title']}: {page['description']}")
-	"""
+	"""Retrieve all published pages from the database.  Returns: Dict[str, Any]: Dictionary of pages where: - key: page slug - value: page data dictionary containing: - title: page title - content: page content - description: meta description - status: publication status - timestamps: created/updated..."""
 	db = db_manager.get_session()
 	try:
 		pages = db.query(Page).filter(Page.status == "published").all()
 		return {page.slug: page.to_dict() for page in pages}
 	except SQLAlchemyError as e:
-		print(f"Error getting pages: {str(e)}")
+		logger.error(f"Error getting pages: {str(e)}")
 		return {}
 	finally:
 		db.close()
@@ -1626,7 +1074,7 @@ def get_draft_pages() -> Dict[str, Any]:
 		pages = db.query(Page).filter(Page.status == "draft").all()
 		return {page.slug: page.to_dict() for page in pages}
 	except SQLAlchemyError as e:
-		print(f"Error getting draft pages: {str(e)}")
+		logger.error(f"Error getting draft pages: {str(e)}")
 		return {}
 	finally:
 		db.close()
@@ -1639,8 +1087,60 @@ def get_posts() -> Dict[str, Any]:
 		posts = db.query(Post).filter(Post.status == "published").all()
 		return {post.slug: post.to_dict() for post in posts}
 	except SQLAlchemyError as e:
-		print(f"Error getting posts: {str(e)}")
+		logger.error(f"Error getting posts: {str(e)}")
 		return {}
+	finally:
+		db.close()
+
+
+def search_posts(query: str, limit: int = 200) -> List[Dict[str, Any]]:
+	"""Published posts matching `query`, best match first.
+
+	Uses SQLite FTS5 or MySQL FULLTEXT when available (prefix match on each word) and
+	falls back to LIKE otherwise. Tag names also match.
+	"""
+	words = re.findall(r"\w+", query or "", re.UNICODE)[:8]
+	if not words:
+		return []
+	ids: List[int] = []
+	dialect = db_manager.engine.dialect.name
+	try:
+		with db_manager.engine.connect() as conn:
+			if dialect == "sqlite":
+				fts = " ".join(f'"{w}"*' for w in words)
+				rows = conn.exec_driver_sql(
+					"SELECT ref_id FROM search_index WHERE kind = 'post' AND search_index MATCH ? ORDER BY rank LIMIT ?",
+					(fts, limit)).fetchall()
+				ids = [int(r[0]) for r in rows]
+			elif dialect in ("mysql", "mariadb"):
+				rows = conn.execute(text(
+					"SELECT id FROM posts WHERE MATCH(title, content) AGAINST (:q IN BOOLEAN MODE) LIMIT :n"),
+					{"q": " ".join(f"+{w}*" for w in words), "n": limit}).fetchall()
+				ids = [int(r[0]) for r in rows]
+			else:
+				raise SQLAlchemyError("no full-text engine")
+	except Exception:
+		ids = []
+		db = db_manager.get_session()
+		try:
+			q = db.query(Post.id).filter(Post.status == "published")
+			for w in words:
+				like = f"%{w}%"
+				q = q.filter(or_(Post.title.ilike(like), Post.content.ilike(like), Post.excerpt.ilike(like)))
+			ids = [r[0] for r in q.limit(limit).all()]
+		finally:
+			db.close()
+	db = db_manager.get_session()
+	try:
+		tag_ids = [r[0] for r in db.query(Post.id).join(Post.tags).filter(
+			Post.status == "published", or_(*[Tag.name.ilike(f"%{w}%") for w in words])).all()] if hasattr(Post, "tags") else []
+		for t in tag_ids:
+			if t not in ids:
+				ids.append(t)
+		if not ids:
+			return []
+		posts = {p.id: p for p in db.query(Post).filter(Post.id.in_(ids), Post.status == "published").all()}
+		return [posts[i].to_dict() for i in ids if i in posts]
 	finally:
 		db.close()
 
@@ -1652,7 +1152,7 @@ def get_draft_posts() -> Dict[str, Any]:
 		posts = db.query(Post).filter(Post.status == "draft").all()
 		return {post.slug: post.to_dict() for post in posts}
 	except SQLAlchemyError as e:
-		print(f"Error getting draft posts: {str(e)}")
+		logger.error(f"Error getting draft posts: {str(e)}")
 		return {}
 	finally:
 		db.close()
@@ -1665,7 +1165,7 @@ def get_categories() -> Dict[str, Any]:
 		categories = db.query(Category).all()
 		return {category.slug: category.to_dict() for category in categories}
 	except SQLAlchemyError as e:
-		print(f"Error getting categories: {str(e)}")
+		logger.error(f"Error getting categories: {str(e)}")
 		return {}
 	finally:
 		db.close()
@@ -1678,50 +1178,14 @@ def get_tags() -> Dict[str, Any]:
 		tags = db.query(Tag).all()
 		return {tag.name: tag.to_dict() for tag in tags}
 	except SQLAlchemyError as e:
-		print(f"Error getting tags: {str(e)}")
+		logger.error(f"Error getting tags: {str(e)}")
 		return {}
 	finally:
 		db.close()
 
 
 def get_site_settings() -> Dict[str, Any]:
-	"""
-	Retrieve all site configuration settings.
-	
-	Features:
-		- JSON value parsing
-		- Error handling
-		- Type conversion
-		- Default values
-		- Session management
-	
-	Returns:
-		Dict[str, Any]: Configuration dictionary containing:
-			- site_title: Site name
-			- site_description: Meta description
-			- theme: Active theme name
-			- menu_items: Navigation structure
-			- custom_settings: Theme-specific options
-			- social_links: Social media URLs
-			- analytics: Analytics configuration
-			
-	Processing:
-		1. Fetch all settings from database
-		2. Parse JSON values where applicable
-		3. Fall back to string values if parsing fails
-		4. Handle missing settings gracefully
-		
-	Error Handling:
-		- Returns empty dict on database errors
-		- Maintains valid JSON structure
-		- Logs parsing errors
-		- Ensures session cleanup
-	
-	Usage:
-		settings = get_site_settings()
-		theme = settings.get('theme', 'default')
-		title = settings.get('site_title', 'My Site')
-	"""
+	"""Retrieve all site configuration settings.  Features: - JSON value parsing - Error handling - Type conversion - Default values - Session management  Returns: Dict[str, Any]: Configuration dictionary containing: - site_title: Site name - site_description: Meta description - theme: Active theme..."""
 	db = db_manager.get_session()
 	try:
 		settings = db.query(SiteSetting).all()
@@ -1734,10 +1198,58 @@ def get_site_settings() -> Dict[str, Any]:
 			result[setting.key] = value
 		return result
 	except SQLAlchemyError as e:
-		print(f"Error getting site settings: {str(e)}")
+		logger.error(f"Error getting site settings: {str(e)}")
 		return {}
 	finally:
 		db.close()
+
+
+MAX_REVISIONS = 50
+
+
+def _editor_id():
+	"""Id of the signed-in user, when called inside a request (None for scripts and imports)."""
+	try:
+		from flask import has_request_context, session
+		return int(session["user_id"]) if has_request_context() and session.get("user_id") else None
+	except Exception:
+		return None
+
+
+def save_revision(db: Session, kind: str, obj, autosave: bool = False, author_id: Optional[int] = None) -> None:
+	"""Store the current title/content of a page or post so it can be restored later."""
+	summary = obj.description if kind == "page" else obj.excerpt
+	rev = Revision(kind=kind, object_id=obj.id, title=obj.title, content=obj.content or "", summary=summary or "",
+	               status=obj.status, is_autosave=autosave, author_id=author_id or _editor_id())
+	db.add(rev)
+	db.flush()
+	old = (db.query(Revision.id).filter(Revision.kind == kind, Revision.object_id == obj.id, Revision.is_autosave.is_(False))
+	       .order_by(Revision.id.desc()).offset(MAX_REVISIONS).all())
+	if old:
+		db.query(Revision).filter(Revision.id.in_([r[0] for r in old])).delete(synchronize_session=False)
+
+
+def _content_changed(obj, title, content, summary, kind) -> bool:
+	current_summary = (obj.description if kind == "page" else obj.excerpt) or ""
+	return (title is not None and title != obj.title) or (content is not None and content != (obj.content or "")) \
+		or (summary is not None and summary != current_summary)
+
+
+def _drop_autosaves(db: Session, kind: str, object_id: int) -> None:
+	db.query(Revision).filter(Revision.kind == kind, Revision.object_id == object_id,
+	                          Revision.is_autosave.is_(True)).delete(synchronize_session=False)
+
+
+def add_redirect(db: Session, source: str, target: str, permanent: bool = True) -> None:
+	"""Create or update a redirect; removes any redirect that would now loop."""
+	if not source or source == target:
+		return
+	db.query(Redirect).filter(Redirect.source == target).delete(synchronize_session=False)
+	row = db.query(Redirect).filter(Redirect.source == source).first()
+	if row:
+		row.target, row.permanent = target, permanent
+	else:
+		db.add(Redirect(source=source, target=target, permanent=permanent))
 
 
 def add_page(slug: str, page_data: Dict[str, Any]) -> bool:
@@ -1753,13 +1265,15 @@ def add_page(slug: str, page_data: Dict[str, Any]) -> bool:
 			template=page_data.get("template") or "default",
 			fields=json.dumps(page_data.get("fields") or {}, ensure_ascii=False),
 			author_id=page_data.get("author_id"),
+			publish_at=page_data.get("publish_at"),
+			seo=json.dumps(page_data.get("seo") or {}, ensure_ascii=False),
 		)
 		db.add(page)
 		db.commit()
 		return True
 	except SQLAlchemyError as e:
 		db.rollback()
-		print(f"Error adding page: {str(e)}")
+		logger.error(f"Error adding page: {str(e)}")
 		return False
 	finally:
 		db.close()
@@ -1783,7 +1297,7 @@ def delete_page(slug: str) -> bool:
 		return False
 	except SQLAlchemyError as e:
 		db.rollback()
-		print(f"Error deleting page: {str(e)}")
+		logger.error(f"Error deleting page: {str(e)}")
 		return False
 	finally:
 		db.close()
@@ -1811,6 +1325,8 @@ def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 			author_id=post_data.get("author_id"),
 			cover_image=post_data.get("cover_image") or None,
 			meta=json.dumps(post_data.get("meta") or {}, ensure_ascii=False),
+			publish_at=post_data.get("publish_at"),
+			seo=json.dumps(post_data.get("seo") or {}, ensure_ascii=False),
 			published_at=(
 				post_data.get("published_at")
 				or (datetime.datetime.utcnow() if post_data.get("status") == "published" else None)
@@ -1830,7 +1346,7 @@ def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 		return True
 	except SQLAlchemyError as e:
 		db.rollback()
-		print(f"Error adding post: {str(e)}")
+		logger.error(f"Error adding post: {str(e)}")
 		return False
 	finally:
 		db.close()
@@ -1872,7 +1388,7 @@ def get_latest_posts(category_slug: Optional[str] = None, limit: int = 5) -> Lis
 			})
 		return result
 	except SQLAlchemyError as e:
-		print(f"Error loading latest posts: {str(e)}")
+		logger.error(f"Error loading latest posts: {str(e)}")
 		return []
 	finally:
 		db.close()
@@ -1885,57 +1401,8 @@ def add_draft_post(slug: str, post_data: Dict[str, Any]) -> bool:
 
 
 def update_site_settings(settings_data: Dict[str, Any]) -> bool:
-	"""
-	Update site configuration settings in the database.
-	
-	Features:
-		- JSON serialization
-		- Atomic transactions
-		- Upsert behavior
-		- Type safety
-		- Timestamp tracking
-		- Session management
-		
-	Args:
-		settings_data (Dict[str, Any]): Configuration dictionary containing:
-			- site_title: Site name (str)
-			- site_description: Meta description (str)
-			- theme: Active theme name (str)
-			- menu_items: Navigation structure (List/Dict)
-			- custom_settings: Theme-specific options (Dict)
-			- social_links: Social media URLs (Dict)
-			- analytics: Analytics configuration (Dict)
-			
-	Returns:
-		bool: True if update successful, False on error
-		
-	Processing:
-		1. Opens database transaction
-		2. Serializes complex values to JSON
-		3. Updates existing or creates new settings
-		4. Updates modification timestamps
-		5. Commits changes atomically
-		6. Rolls back on errors
-		
-	Error Handling:
-		- JSON serialization errors
-		- Database constraint violations 
-		- Transaction management
-		- Timestamp validation
-		- Session cleanup
-		
-	Usage:
-		success = update_site_settings({
-			'site_title': 'My Blog',
-			'theme': 'dark',
-			'menu_items': [
-				{'label': 'Home', 'url': '/'},
-				{'label': 'About', 'url': '/about'}
-			]
-		})
-	"""
+	"""Update site configuration settings in the database.  Features: - JSON serialization - Atomic transactions - Upsert behavior - Type safety - Timestamp tracking - Session management  Args: settings_data (Dict[str, Any]): Configuration dictionary containing: - site_title: Site name (str) -..."""
 	db = db_manager.get_session()
-	print(settings_data,"database")
 	try:
 		for key, value in settings_data.items():
 			setting = db.query(SiteSetting).filter(SiteSetting.key == key).first()
@@ -1959,7 +1426,7 @@ def update_site_settings(settings_data: Dict[str, Any]) -> bool:
 		return True
 	except SQLAlchemyError as e:
 		db.rollback()
-		print(f"Error updating site settings: {str(e)}")
+		logger.error(f"Error updating site settings: {str(e)}")
 		return False
 	finally:
 		db.close()
@@ -2017,12 +1484,12 @@ def migrate_from_json(json_file_path: str) -> bool:
 				db.add(setting)
 
 		db.commit()
-		print("Migration completed successfully!")
+		logger.info("Migration completed successfully!")
 		return True
 
 	except Exception as e:
 		db.rollback()
-		print(f"Migration failed: {str(e)}")
+		logger.error(f"Migration failed: {str(e)}")
 		return False
 	finally:
 		db.close()
@@ -2044,9 +1511,9 @@ def backup_to_json(json_file_path: str) -> bool:
 		with open(json_file_path, "w") as f:
 			json.dump(data, f, indent=4)
 
-		print(f"Backup completed: {json_file_path}")
+		logger.info(f"Backup completed: {json_file_path}")
 		return True
 
 	except Exception as e:
-		print(f"Backup failed: {str(e)}")
+		logger.error(f"Backup failed: {str(e)}")
 		return False

@@ -73,7 +73,7 @@ def _add_tree(zf: zipfile.ZipFile, src: str, dest: str) -> int:
 def export_package(
 	site_title: str, active_extensions: List[str], active_theme: str, *,
 	content=True, settings=True, extension_data=True, media=False, extensions=False, themes=False,
-	selected_extensions=None, selected_themes=None,
+	selected_extensions=None, selected_themes=None, extension_exports=None,
 ) -> bytes:
 	db = db_manager.get_session()
 	buf = io.BytesIO()
@@ -126,6 +126,7 @@ def export_package(
 						"sort_order": e.sort_order or 0, "data": _json(e.data, {}),
 					} for e in db.query(Entry).order_by(Entry.kind, Entry.sort_order, Entry.id).all()],
 					"settings": {k: v for k, v in settings_all.items() if k.startswith("ext_")},
+					"extensions": extension_exports or {},
 				}, ensure_ascii=False, indent=1))
 			if media:
 				media_rows = []
@@ -166,7 +167,8 @@ def read_manifest(path_or_stream) -> Dict[str, Any]:
 
 
 def import_package(stream, *, content=True, settings=True, extension_data=True, media=True,
-		extensions=True, themes=True, overwrite=False, restore_state=False, write_setting=None) -> List[str]:
+		extensions=True, themes=True, overwrite=False, restore_state=False, write_setting=None,
+		extension_importer=None) -> List[str]:
 	"""Returns a list of human-readable result lines."""
 	report: List[str] = []
 	work = tempfile.mkdtemp(prefix="pkg-")
@@ -342,6 +344,9 @@ def import_package(stream, *, content=True, settings=True, extension_data=True, 
 						db.add(SiteSetting(key=key, value=payload))
 				db.commit()
 				report.append(f"Extension data: {added + updated} record(s) imported. They show up when their extension is active.")
+				if extension_importer:
+					for ext_slug, ext_data in (data.get("extensions") or {}).items():
+						report.append(extension_importer(ext_slug, ext_data, overwrite))
 		except SQLAlchemyError as e:
 			db.rollback()
 			raise em.ExtensionError(f"Import failed: {e}")
