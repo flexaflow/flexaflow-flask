@@ -39,26 +39,22 @@ class MigrationRequest(Request):
 def media_storer():
 	"""Returns store(data, original_name, mime) -> '/uploads/<file>' that registers the file in the media library."""
 	import app as core
-	from PIL import Image
+	import images as core_images
 
 	def store(data: bytes, original_name: str, mime: str):
-		ext = MIME_EXT.get(mime)
-		if not ext:
-			return None
-		filename = f"{uuid.uuid4()}{ext}"
-		path = os.path.join(core.app.config["UPLOAD_FOLDER"], filename)
-		os.makedirs(core.app.config["UPLOAD_FOLDER"], exist_ok=True)
-		with open(path, "wb") as fh:
-			fh.write(data)
+		folder = core.app.config["UPLOAD_FOLDER"]
 		try:
-			with Image.open(path) as img:
-				img.verify()
-			with Image.open(path) as img:
-				width, height = img.size
+			filename, mime, width, height = core_images.store_verified_image(io.BytesIO(data), folder, str(uuid.uuid4()))
+		except core_images.UnsafeImage:
+			return None
+		ext = os.path.splitext(filename)[1]
+		path = os.path.join(folder, filename)
+		os.makedirs(os.path.join(folder, "thumbnails"), exist_ok=True)
+		try:
 			thumbs = core.create_image_thumbnails(path, filename)
 			base = os.path.splitext(re.sub(r"[^\w.\-]", "_", original_name))[0][:200] or "image"
 			ok = db_manager.add_media({
-				"filename": filename, "original_filename": base + ext, "mime_type": mime, "file_size": len(data),
+				"filename": filename, "original_filename": base + ext, "mime_type": mime, "file_size": os.path.getsize(path),
 				"width": width, "height": height, "alt_text": base, "caption": "", "title": base,
 				"description": "", "thumbnail": thumbs.get("thumbnail"),
 			})

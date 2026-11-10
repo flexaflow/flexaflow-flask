@@ -1,26 +1,56 @@
 {% extends "_admin_layout.html" %}
 {% block title %}Media library{% endblock %}
 {% block content %}
+{% set current_group = groups|selectattr('id', 'equalto', group_filter|int)|first if (group_filter and group_filter.isdigit()) else none %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-	<h1 class="h4 mb-2">Media library <small class="text-muted">({{ media.total }})</small></h1>
-	<div class="mb-2">
+	<h1 class="h4 mb-2">Media library <small class="text-muted">({{ media.total }})</small>{% if current_group %} <small class="text-muted">· {{ current_group.name }}</small>{% endif %}</h1>
+	<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+		<button type="button" class="btn btn-sm btn-outline-secondary" id="manageGroupsBtn">Manage groups</button>
+		<select class="form-select form-select-sm" id="uploadGroup" style="width:auto" aria-label="Put uploaded images in group">
+			<option value="">No group</option>
+			{% for g in groups %}<option value="{{ g.id }}" {% if current_group and current_group.id == g.id %}selected{% endif %}>{{ g.name }}</option>{% endfor %}
+		</select>
 		<button type="button" class="btn btn-sm btn-primary" id="uploadBtn">Upload new media</button>
 		<input type="file" id="upload-input" class="d-none" accept="image/*" multiple>
 	</div>
 </div>
 
-<form method="get" class="card card-body mb-3" role="search">
+<form method="get" class="card card-body mb-3" role="search" id="filterForm">
 	<div class="row g-2 align-items-end">
-		<div class="col-md-8 mb-md-0">
+		<div class="col-md-6 mb-md-0">
 			<label class="small text-muted mb-0" for="search-media">Search</label>
 			<input type="search" class="form-control" id="search-media" name="search" value="{{ request.args.get('search', '') }}" placeholder="Filename, title or description…">
 		</div>
-		<div class="col-md-4 text-md-end">
+		<div class="col-md-3 mb-md-0">
+			<label class="small text-muted mb-0" for="group-filter">Group</label>
+			<select class="form-select" id="group-filter" name="group">
+				<option value="">All images</option>
+				<option value="none" {% if group_filter == 'none' %}selected{% endif %}>Not in a group</option>
+				{% for g in groups %}<option value="{{ g.id }}" {% if group_filter == g.id|string %}selected{% endif %}>{{ g.name }} ({{ g.count }})</option>{% endfor %}
+			</select>
+		</div>
+		<div class="col-md-3 text-md-end">
 			<button class="btn btn-primary" type="submit">Search</button>
 			<a class="btn btn-outline-secondary" href="{{ url_for('media.media_library') }}">Clear</a>
 		</div>
 	</div>
 </form>
+
+<div id="bulkBar" class="card card-body mb-3 d-none">
+	<div class="d-flex flex-wrap gap-2 align-items-center">
+		<strong id="bulkCount" class="me-2">0 selected</strong>
+		<select class="form-select form-select-sm" id="bulkGroup" style="width:auto" aria-label="Choose a group">
+			<option value="">Add to group…</option>
+			{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+		</select>
+		<button type="button" class="btn btn-sm btn-primary" id="bulkAddBtn">Add to group</button>
+		{% if current_group %}
+		<button type="button" class="btn btn-sm btn-outline-danger" id="bulkRemoveBtn" data-group="{{ current_group.id }}">Remove from “{{ current_group.name }}”</button>
+		{% endif %}
+		<button type="button" class="btn btn-sm btn-link ms-auto" id="bulkClear">Clear selection</button>
+	</div>
+	<p class="small text-muted mt-2 mb-0">Removing images from a group does not delete them.</p>
+</div>
 
 <div id="uploadStatus" class="alert alert-info d-none" role="status"></div>
 
@@ -28,7 +58,15 @@
 	<div class="media-grid media-library-grid">
 		{% for item in media['items'] %}
 		<div class="media-item" data-id="{{ item.id }}" data-url="{{ item.url }}">
-			<img src="{{ item.thumbnail_url or item.url }}" alt="{{ item.alt_text or item.original_filename }}" loading="lazy">
+			<label class="media-select" title="Select">
+				<input type="checkbox" class="js-select" data-id="{{ item.id }}" aria-label="Select {{ item.original_filename }}">
+			</label>
+			<a href="{{ item.url }}" class="js-view-image d-block" title="View {{ item.original_filename }}"
+				data-index="{{ loop.index0 }}" data-id="{{ item.id }}" data-url="{{ item.url }}"
+				data-name="{{ item.original_filename }}" data-alt="{{ item.alt_text or '' }}" data-caption="{{ item.caption or '' }}"
+				data-width="{{ item.width or '' }}" data-height="{{ item.height or '' }}" data-size="{{ item.file_size or '' }}">
+				<img src="{{ item.thumbnail_url or item.url }}" alt="{{ item.alt_text or item.original_filename }}" loading="lazy">
+			</a>
 			<div class="actions">
 				<button type="button" class="btn btn-sm btn-light js-edit" data-id="{{ item.id }}" aria-label="Edit {{ item.original_filename }}">Edit</button>
 				<button type="button" class="btn btn-sm btn-danger js-delete" data-id="{{ item.id }}" aria-label="Delete {{ item.original_filename }}">Delete</button>
@@ -36,16 +74,19 @@
 			<div class="mt-2 small">
 				<div class="text-truncate" title="{{ item.original_filename }}">{{ item.original_filename }}</div>
 				<span class="text-muted">{{ item.width }}&times;{{ item.height }}</span>
+				{% if item.groups %}
+				<div class="mt-1">{% for g in item.groups %}<span class="badge bg-light text-dark border me-1 mb-1 fw-normal">{{ g.name }}</span>{% endfor %}</div>
+				{% endif %}
 			</div>
 		</div>
 		{% else %}
-		<p class="text-muted text-center py-5 mb-0" style="grid-column:1/-1">No media found. Use “Upload new media” to add images.</p>
+		<p class="text-muted text-center py-5 mb-0" style="grid-column:1/-1">{% if group_filter %}No images in this view.{% else %}No media found.{% endif %} Use “Upload new media” to add images.</p>
 		{% endfor %}
 	</div>
 </div></div>
 
 {% if media.total_pages > 1 %}
-{% set sq = ('search=' ~ (request.args.get('search', '')|urlencode) ~ '&') if request.args.get('search') else '' %}
+{% set sq = ('search=' ~ (request.args.get('search', '')|urlencode) ~ '&' if request.args.get('search') else '') ~ ('group=' ~ (group_filter|urlencode) ~ '&' if group_filter else '') %}
 <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Pages">
 	{% if media.page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="?{{ sq }}page={{ media.page - 1 }}">&larr; Previous</a>{% else %}<span></span>{% endif %}
 	<span class="small text-muted">Page {{ media.page }} of {{ media.total_pages }}</span>
@@ -62,11 +103,65 @@
 		<div class="modal-body">
 			<input type="hidden" id="edit-media-id">
 			<div class="mb-3"><label for="alt-text">Alt text</label><input type="text" class="form-control" id="alt-text"></div>
-			<div class="mb-0"><label for="caption">Caption</label><textarea class="form-control" id="caption" rows="3"></textarea></div>
+			<div class="mb-3"><label for="caption">Caption</label><textarea class="form-control" id="caption" rows="3"></textarea></div>
+			<div class="mb-0">
+				<label>Groups</label>
+				<div id="editGroups" class="small">
+					{% for g in groups %}
+					<div class="form-check"><input class="form-check-input js-group-check" type="checkbox" id="eg-{{ g.id }}" value="{{ g.id }}"><label class="form-check-label" for="eg-{{ g.id }}">{{ g.name }}</label></div>
+					{% else %}
+					<p class="text-muted mb-0">No groups yet. Create one with “Manage groups”.</p>
+					{% endfor %}
+				</div>
+			</div>
 		</div>
 		<div class="modal-footer">
 			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
 			<button type="button" class="btn btn-primary" id="saveMedia">Save changes</button>
+		</div>
+	</div></div>
+</div>
+
+<div class="modal fade" id="groupsModal" tabindex="-1" role="dialog" aria-labelledby="groupsModalTitle" aria-hidden="true">
+	<div class="modal-dialog" role="document"><div class="modal-content">
+		<div class="modal-header">
+			<h5 class="modal-title" id="groupsModalTitle">Image groups</h5>
+			<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+		</div>
+		<div class="modal-body">
+			<form id="newGroupForm" class="mb-4">
+				<label for="newGroupName" class="small text-muted">New group</label>
+				<div class="input-group">
+					<input type="text" class="form-control" id="newGroupName" maxlength="120" placeholder="e.g. Annual Gala 2026" required>
+					<button class="btn btn-primary" type="submit">Create</button>
+				</div>
+			</form>
+			<div id="groupList" class="list-group"></div>
+			<p class="small text-muted mt-3 mb-0">Deleting a group keeps its images in the library.</p>
+		</div>
+		<div class="modal-footer">
+			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+		</div>
+	</div></div>
+</div>
+
+<div class="modal fade" id="imageViewerModal" tabindex="-1" role="dialog" aria-labelledby="imageViewerTitle" aria-hidden="true">
+	<div class="modal-dialog modal-xl modal-dialog-centered" role="document"><div class="modal-content">
+		<div class="modal-header">
+			<h5 class="modal-title text-truncate" id="imageViewerTitle"></h5>
+			<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+		</div>
+		<div class="modal-body bg-dark position-relative p-0 d-flex align-items-center justify-content-center" style="min-height:60vh">
+			<button type="button" class="btn btn-light position-absolute top-50 start-0 translate-middle-y ms-2" id="imageViewerPrev" aria-label="Previous image">&larr;</button>
+			<img id="imageViewerImg" src="" alt="" style="max-width:100%;max-height:75vh;object-fit:contain">
+			<button type="button" class="btn btn-light position-absolute top-50 end-0 translate-middle-y me-2" id="imageViewerNext" aria-label="Next image">&rarr;</button>
+		</div>
+		<div class="modal-footer justify-content-between">
+			<div class="small text-muted" id="imageViewerMeta"></div>
+			<div class="d-flex gap-2">
+				<a class="btn btn-sm btn-outline-secondary" id="imageViewerOpen" href="#" target="_blank" rel="noopener">Open original</a>
+				<button type="button" class="btn btn-sm btn-primary" id="imageViewerEdit">Edit details</button>
+			</div>
 		</div>
 	</div></div>
 </div>
@@ -75,16 +170,34 @@
 {% block scripts %}
 <script>
 (function ($) {
+	var GROUPS = {{ groups|tojson }};
+	var BASE_URL = {{ url_for('media.media_library')|tojson }};
+	var CURRENT_GROUP = {{ (current_group.id if current_group else none)|tojson }};
+
 	var $status = $('#uploadStatus');
 	function say(msg, cls) { $status.removeClass('d-none alert-info alert-danger alert-success').addClass('alert-' + (cls || 'info')).text(msg); }
+	function postJson(url, method, body) {
+		return fetch(url, {
+			method: method || 'POST', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body || {})
+		}).then(function (r) { return r.json().then(function (d) { d.ok = r.ok; return d; }); });
+	}
+	function selectedGroupName() {
+		var sel = $('#uploadGroup option:selected');
+		return sel.val() ? sel.text() : '';
+	}
 
+	// ---- upload (batch) into an optional group ----
 	$('#uploadBtn').on('click', function () { $('#upload-input').trigger('click'); });
 	$('#upload-input').on('change', function () {
 		var files = this.files;
 		if (!files.length) { return; }
 		var fd = new FormData();
 		for (var i = 0; i < files.length; i++) { fd.append('files[]', files[i]); }
-		say('Uploading ' + files.length + ' file(s)…');
+		var gid = $('#uploadGroup').val();
+		if (gid) { fd.append('group_id', gid); }
+		var where = gid ? ' to “' + selectedGroupName() + '”' : '';
+		say('Uploading ' + files.length + ' file(s)' + where + '…');
 		fetch('/admin/media/upload', { method: 'POST', body: fd })
 			.then(function (r) { return r.json(); })
 			.then(function (data) {
@@ -95,25 +208,85 @@
 				} else { location.reload(); }
 			})
 			.catch(function () { say('Upload failed.', 'danger'); });
+		this.value = '';
 	});
 
-	$(document).on('click', '.js-edit', function () {
+	// ---- group filter: change the view straight away ----
+	$('#group-filter').on('change', function () { $('#filterForm')[0].submit(); });
+
+	// ---- selection for bulk actions ----
+	var selected = {};
+	function refreshBulk() {
+		var ids = Object.keys(selected);
+		$('#bulkBar').toggleClass('d-none', ids.length === 0);
+		$('#bulkCount').text(ids.length + ' selected');
+	}
+	function selectedIds() { return Object.keys(selected).map(function (k) { return parseInt(k, 10); }); }
+
+	$(document).on('change', '.js-select', function () {
 		var id = $(this).data('id');
+		if (this.checked) { selected[id] = true; } else { delete selected[id]; }
+		$(this).closest('.media-item').toggleClass('is-selected', this.checked);
+		refreshBulk();
+	});
+	$('#bulkClear').on('click', function () {
+		selected = {};
+		$('.js-select').prop('checked', false);
+		$('.media-item').removeClass('is-selected');
+		refreshBulk();
+	});
+	$('#bulkAddBtn').on('click', function () {
+		var gid = $('#bulkGroup').val();
+		if (!gid) { alert('Choose a group first.'); return; }
+		postJson('/admin/media/groups/' + gid + '/add', 'POST', { media_ids: selectedIds() }).then(function (d) {
+			if (d.success) { location.reload(); } else { alert('Could not add: ' + (d.error || 'unknown error')); }
+		});
+	});
+	$('#bulkRemoveBtn').on('click', function () {
+		var gid = $(this).data('group');
+		if (!confirm('Remove the selected images from this group? The images will stay in the library.')) { return; }
+		postJson('/admin/media/groups/' + gid + '/remove', 'POST', { media_ids: selectedIds() }).then(function (d) {
+			if (d.success) { location.reload(); } else { alert('Could not remove: ' + (d.error || 'unknown error')); }
+		});
+	});
+
+	// ---- edit details (alt, caption and group membership) ----
+	function openEditMedia(id) {
 		fetch('/admin/media/' + id).then(function (r) { return r.json(); }).then(function (d) {
 			$('#edit-media-id').val(id);
 			$('#alt-text').val(d.alt_text || '');
 			$('#caption').val(d.caption || '');
+			var inGroups = (d.groups || []).map(function (g) { return g.id; });
+			$('.js-group-check').each(function () {
+				$(this).prop('checked', inGroups.indexOf(parseInt($(this).val(), 10)) !== -1);
+			});
+			$('#editMediaModal').data('originalGroups', inGroups);
 			bootstrap.Modal.getOrCreateInstance(document.getElementById('editMediaModal')).show();
 		});
+	}
+
+	$(document).on('click', '.js-edit', function () {
+		openEditMedia($(this).data('id'));
 	});
 
 	$('#saveMedia').on('click', function () {
-		var id = $('#edit-media-id').val();
-		fetch('/admin/media/' + id, {
+		var id = parseInt($('#edit-media-id').val(), 10);
+		var before = $('#editMediaModal').data('originalGroups') || [];
+		var after = $('.js-group-check:checked').map(function () { return parseInt($(this).val(), 10); }).get();
+		var toAdd = after.filter(function (g) { return before.indexOf(g) === -1; });
+		var toRemove = before.filter(function (g) { return after.indexOf(g) === -1; });
+
+		var calls = [fetch('/admin/media/' + id, {
 			method: 'PUT', headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ alt_text: $('#alt-text').val(), caption: $('#caption').val() })
-		}).then(function (r) { return r.json(); }).then(function (d) {
-			if (d.success) { location.reload(); } else { alert('Update failed: ' + (d.error || 'unknown error')); }
+		}).then(function (r) { return r.json(); })];
+		toAdd.forEach(function (g) { calls.push(postJson('/admin/media/groups/' + g + '/add', 'POST', { media_ids: [id] })); });
+		toRemove.forEach(function (g) { calls.push(postJson('/admin/media/groups/' + g + '/remove', 'POST', { media_ids: [id] })); });
+
+		Promise.all(calls).then(function (results) {
+			var failed = results.filter(function (d) { return !d.success; });
+			if (failed.length) { alert('Some changes were not saved: ' + (failed[0].error || 'unknown error')); }
+			location.reload();
 		});
 	});
 
@@ -123,6 +296,125 @@
 			.then(function (r) { return r.json(); }).then(function (d) {
 				if (d.success) { location.reload(); } else { alert('Delete failed: ' + (d.error || 'unknown error')); }
 			});
+	});
+
+	// ---- manage groups: create, rename, delete ----
+	function renderGroupList() {
+		var $list = $('#groupList').empty();
+		if (!GROUPS.length) { $list.append($('<p class="text-muted mb-0"></p>').text('No groups yet.')); return; }
+		GROUPS.forEach(function (g) {
+			var $row = $('<div class="list-group-item d-flex gap-2 align-items-center"></div>').attr('data-id', g.id);
+			$row.append($('<input type="text" class="form-control form-control-sm js-group-name" maxlength="120">').val(g.name));
+			$row.append($('<small class="text-muted text-nowrap"></small>').text(g.count + (g.count === 1 ? ' image' : ' images')));
+			$row.append($('<button type="button" class="btn btn-sm btn-outline-primary js-group-save">Save</button>'));
+			$row.append($('<button type="button" class="btn btn-sm btn-outline-danger js-group-delete">Delete</button>'));
+			$list.append($row);
+		});
+	}
+	renderGroupList();
+
+	$('#manageGroupsBtn').on('click', function () {
+		bootstrap.Modal.getOrCreateInstance(document.getElementById('groupsModal')).show();
+	});
+
+	$('#newGroupForm').on('submit', function (e) {
+		e.preventDefault();
+		var name = $('#newGroupName').val().trim();
+		if (!name) { return; }
+		postJson('/admin/media/groups', 'POST', { name: name }).then(function (d) {
+			if (d.success) { location.reload(); } else { alert(d.error || 'Could not create the group.'); }
+		});
+	});
+
+	$(document).on('click', '.js-group-save', function () {
+		var $row = $(this).closest('[data-id]');
+		postJson('/admin/media/groups/' + $row.data('id'), 'PUT', { name: $row.find('.js-group-name').val().trim() }).then(function (d) {
+			if (d.success) { location.reload(); } else { alert(d.error || 'Could not rename the group.'); }
+		});
+	});
+
+	$(document).on('click', '.js-group-delete', function () {
+		var $row = $(this).closest('[data-id]');
+		var gid = parseInt($row.data('id'), 10);
+		var name = $row.find('.js-group-name').val();
+		if (!confirm('Delete the group “' + name + '”? Its images stay in the library.')) { return; }
+		fetch('/admin/media/groups/' + gid, { method: 'DELETE' }).then(function (r) { return r.json(); }).then(function (d) {
+			if (!d.success) { alert(d.error || 'Could not delete the group.'); return; }
+			// If the group you were viewing is gone, go back to the full library.
+			location.href = (gid === CURRENT_GROUP) ? BASE_URL : location.href;
+		});
+	});
+})(window.jQuery);
+</script>
+
+<script>
+// ---- Image viewer: full-size preview of one media item, with previous/next through the current page ----
+(function ($) {
+	var viewerEl = document.getElementById('imageViewerModal');
+	var viewerItems = [];
+	var viewerIndex = 0;
+
+	function formatBytes(n) {
+		n = parseInt(n, 10);
+		if (!n) { return ''; }
+		if (n < 1024) { return n + ' B'; }
+		if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + ' KB'; }
+		return (n / (1024 * 1024)).toFixed(1) + ' MB';
+	}
+
+	function readViewerItems() {
+		return $('.media-library-grid .js-view-image').map(function () {
+			var $a = $(this);
+			return {
+				id: $a.data('id'),
+				url: $a.attr('data-url'),
+				name: $a.attr('data-name') || '',
+				alt: $a.attr('data-alt') || '',
+				width: $a.attr('data-width') || '',
+				height: $a.attr('data-height') || '',
+				size: $a.attr('data-size') || ''
+			};
+		}).get();
+	}
+
+	function showViewer(index) {
+		if (!viewerItems.length) { return; }
+		viewerIndex = (index + viewerItems.length) % viewerItems.length;
+		var item = viewerItems[viewerIndex];
+		$('#imageViewerTitle').text(item.name);
+		$('#imageViewerImg').attr('src', item.url).attr('alt', item.alt || item.name);
+		$('#imageViewerOpen').attr('href', item.url);
+		var dims = item.width && item.height ? item.width + ' × ' + item.height + ' px' : '';
+		var parts = [dims, formatBytes(item.size), (viewerIndex + 1) + ' of ' + viewerItems.length].filter(Boolean);
+		$('#imageViewerMeta').text(parts.join('  ·  '));
+		$('#imageViewerPrev, #imageViewerNext').toggleClass('d-none', viewerItems.length < 2);
+		bootstrap.Modal.getOrCreateInstance(viewerEl).show();
+	}
+
+	$(document).on('click', '.js-view-image', function (e) {
+		if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) { return; } // let the browser open it in a new tab
+		e.preventDefault();
+		viewerItems = readViewerItems();
+		showViewer(parseInt($(this).attr('data-index'), 10) || 0);
+	});
+
+	$('#imageViewerPrev').on('click', function () { showViewer(viewerIndex - 1); });
+	$('#imageViewerNext').on('click', function () { showViewer(viewerIndex + 1); });
+
+	$(document).on('keydown', function (e) {
+		if (!$(viewerEl).hasClass('show')) { return; }
+		if (e.key === 'ArrowLeft') { showViewer(viewerIndex - 1); }
+		if (e.key === 'ArrowRight') { showViewer(viewerIndex + 1); }
+	});
+
+	$('#imageViewerEdit').on('click', function () {
+		var id = viewerItems[viewerIndex] && viewerItems[viewerIndex].id;
+		if (!id) { return; }
+		// Hide the viewer first, then open the edit dialog for the same item (avoids stacked modals).
+		$(viewerEl).one('hidden.bs.modal', function () {
+			$('.js-edit[data-id="' + id + '"]').first().trigger('click');
+		});
+		bootstrap.Modal.getOrCreateInstance(viewerEl).hide();
 	});
 })(window.jQuery);
 </script>

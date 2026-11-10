@@ -22,7 +22,7 @@ def _setting_fields(manifest):
 
 
 def init(app, manager):
-	allow_upload = os.environ.get("FLEXAFLOW_ALLOW_EXTENSION_UPLOAD", "1") != "0"
+	allow_upload = os.environ.get("FLEXAFLOW_ALLOW_EXTENSION_UPLOAD", "0") == "1"
 
 	@app.route("/admin/extensions")
 	@capability_required("manage_extensions")

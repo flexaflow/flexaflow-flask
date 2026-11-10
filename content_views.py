@@ -10,6 +10,7 @@ import io
 from urllib.parse import urlencode
 import json
 import os
+import images
 import logging
 import uuid
 
@@ -25,6 +26,7 @@ from data_store import db_manager, get_categories
 
 bp = Blueprint("content", __name__)
 
+IMAGE_DOC_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 DOCUMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "zip", "jpg", "jpeg", "png", "webp"}
 
 
@@ -140,8 +142,15 @@ def upload_file():
 		return jsonify({"success": False, "error": "This file type is not allowed. Use PDF, Word, Excel, PowerPoint, image, CSV or ZIP."}), 400
 	folder = os.path.join(current_app.config["UPLOAD_FOLDER"], "files")
 	os.makedirs(folder, exist_ok=True)
-	stored = f"{uuid.uuid4().hex[:8]}-{name}"
-	upload.save(os.path.join(folder, stored))
+	if ext in IMAGE_DOC_EXTENSIONS:
+		# Images must really be images; they are re-encoded and named after the verified format.
+		try:
+			stored, _mime, _w, _h = images.store_verified_image(upload.stream, folder, uuid.uuid4().hex[:8] + "-" + os.path.splitext(name)[0][:80])
+		except images.UnsafeImage:
+			return jsonify({"success": False, "error": "The file is not a valid image."}), 400
+	else:
+		stored = f"{uuid.uuid4().hex[:8]}-{name}"
+		upload.save(os.path.join(folder, stored))
 	return jsonify({"success": True, "url": f"/uploads/files/{stored}", "name": name})
 
 

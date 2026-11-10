@@ -18,6 +18,8 @@ body.admin-body { background: #f1f3f5; font-size: 15px; }
 .media-library-grid { padding: 1rem; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .media-library-grid .media-item { border: 1px solid #dee2e6; cursor: default; }
 .media-library-grid .media-item img { height: 150px; }
+.media-library-grid .js-view-image { cursor: zoom-in; }
+.media-library-grid .js-view-image:focus-visible { outline: 2px solid #0d6efd; outline-offset: 2px; }
 .tox-tinymce { max-width: 100%; }
 @media (max-width: 991px) { .permalink-box input { min-width: 0; width: 100%; } }
 

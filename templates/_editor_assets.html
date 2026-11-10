@@ -41,9 +41,18 @@
 				editor.ui.registry.addButton('gallery', {
 					text: 'Image library',
 					onAction: function () {
-						window.openMediaPicker(function (url) {
-							editor.insertContent('<img src="' + url + '" alt="">');
-						});
+						window.openMediaPicker(function (url, item, size) {
+							var alt = (item && (item.alt_text || item.original_filename)) || '';
+							var attrs = ' src="' + editor.dom.encode(url) + '" alt="' + editor.dom.encode(alt) + '"';
+							if (size === 'original' && item && item.width && item.height) {
+								// Keep the file's own dimensions.
+								attrs += ' width="' + item.width + '" height="' + item.height + '"';
+							} else {
+								// Default: scale down to the content width, never up, and keep the aspect ratio.
+								attrs += ' style="max-width:100%;height:auto;"';
+							}
+							editor.insertContent('<img' + attrs + '>');
+						}, { withSize: true });
 					}
 				});
 			}

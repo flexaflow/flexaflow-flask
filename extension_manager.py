@@ -18,7 +18,7 @@ What ``register(api)`` can do is listed on ExtensionAPI below and in docs/EXTENS
 
 SECURITY: an extension is Python code that runs with the full rights of the site. Only
 administrators can install one, and only code from a source you trust should be installed.
-Set FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=0 to turn browser uploads off (extensions can still be
+Browser uploads are off unless FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=1 (extensions can always be
 copied into extensions/ on the server).
 """
 

@@ -17,7 +17,9 @@ from sqlalchemy import (
 	ForeignKey,
 	Table,
 	event,
+	func,
 	inspect,
+	select,
 	text,
 	or_,
 )
@@ -157,6 +159,31 @@ class Media(Base):
 	updated_at = Column(
 		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
 	)
+
+
+class MediaGroup(Base):
+	"""A named group of media items (e.g. an event). An item can belong to several groups.
+
+	Deleting a group only removes its memberships; the images themselves are kept.
+	"""
+	__tablename__ = "media_groups"
+
+	id = Column(Integer, primary_key=True)
+	name = Column(String(120), nullable=False, unique=True)
+	description = Column(Text)
+	created_at = Column(DateTime, default=datetime.datetime.utcnow)
+	updated_at = Column(
+		DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+	)
+
+
+class MediaGroupItem(Base):
+	"""Membership row linking one media item to one group."""
+	__tablename__ = "media_group_items"
+
+	group_id = Column(Integer, ForeignKey("media_groups.id", ondelete="CASCADE"), primary_key=True)
+	media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"), primary_key=True)
+	added_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 ROLE_ADMINISTRATOR = "administrator"
@@ -861,7 +888,174 @@ class DatabaseManager:
 		finally:
 			db.close()
 
-	def get_media_library(self, page=1, per_page=20, search=None):
+	# ---- media groups -------------------------------------------------------------------------------------------
+	@staticmethod
+	def _clean_group_name(name):
+		name = " ".join((name or "").split())
+		if not name:
+			raise ValueError("Give the group a name.")
+		if len(name) > 120:
+			raise ValueError("Group names can be at most 120 characters.")
+		return name
+
+	def list_media_groups(self):
+		"""All groups, alphabetically, each with the number of images in it."""
+		db = self.get_session()
+		try:
+			rows = (
+				db.query(MediaGroup.id, MediaGroup.name, MediaGroup.description, func.count(MediaGroupItem.media_id))
+				.outerjoin(MediaGroupItem, MediaGroupItem.group_id == MediaGroup.id)
+				.group_by(MediaGroup.id)
+				.order_by(func.lower(MediaGroup.name))
+				.all()
+			)
+			return [{"id": r[0], "name": r[1], "description": r[2] or "", "count": r[3]} for r in rows]
+		except Exception as e:
+			logger.error(f"Error listing media groups: {str(e)}")
+			return []
+		finally:
+			db.close()
+
+	def get_groups_for_media(self, media_id):
+		"""The groups one media item belongs to, as [{id, name}]."""
+		db = self.get_session()
+		try:
+			rows = (
+				db.query(MediaGroup.id, MediaGroup.name)
+				.join(MediaGroupItem, MediaGroupItem.group_id == MediaGroup.id)
+				.filter(MediaGroupItem.media_id == media_id)
+				.order_by(func.lower(MediaGroup.name))
+				.all()
+			)
+			return [{"id": r[0], "name": r[1]} for r in rows]
+		except Exception as e:
+			logger.error(f"Error getting groups for media: {str(e)}")
+			return []
+		finally:
+			db.close()
+
+	def get_media_group(self, group_id):
+		"""One group as a dict, or None."""
+		db = self.get_session()
+		try:
+			group = db.query(MediaGroup).filter(MediaGroup.id == group_id).first()
+			if not group:
+				return None
+			return {"id": group.id, "name": group.name, "description": group.description or ""}
+		finally:
+			db.close()
+
+	def create_media_group(self, name, description=""):
+		"""Create a group. Raises ValueError for a bad or duplicate name."""
+		name = self._clean_group_name(name)
+		db = self.get_session()
+		try:
+			if db.query(MediaGroup).filter(func.lower(MediaGroup.name) == name.lower()).first():
+				raise ValueError("A group with this name already exists.")
+			group = MediaGroup(name=name, description=(description or "").strip() or None)
+			db.add(group)
+			db.commit()
+			return {"id": group.id, "name": group.name, "description": group.description or "", "count": 0}
+		except ValueError:
+			db.rollback()
+			raise
+		except Exception as e:
+			db.rollback()
+			logger.error(f"Error creating media group: {str(e)}")
+			raise ValueError("Could not create the group.")
+		finally:
+			db.close()
+
+	def update_media_group(self, group_id, name, description=None):
+		"""Rename a group (and change its description if one is given). Returns None if it does not exist; raises ValueError for a bad name."""
+		name = self._clean_group_name(name)
+		db = self.get_session()
+		try:
+			group = db.query(MediaGroup).filter(MediaGroup.id == group_id).first()
+			if not group:
+				return None
+			clash = (
+				db.query(MediaGroup)
+				.filter(func.lower(MediaGroup.name) == name.lower(), MediaGroup.id != group_id)
+				.first()
+			)
+			if clash:
+				raise ValueError("A group with this name already exists.")
+			group.name = name
+			if description is not None:
+				group.description = description.strip() or None
+			db.commit()
+			return True
+		except ValueError:
+			db.rollback()
+			raise
+		finally:
+			db.close()
+
+	def delete_media_group(self, group_id):
+		"""Delete a group and its memberships. The images in it are kept."""
+		db = self.get_session()
+		try:
+			group = db.query(MediaGroup).filter(MediaGroup.id == group_id).first()
+			if not group:
+				return False
+			db.query(MediaGroupItem).filter(MediaGroupItem.group_id == group_id).delete(synchronize_session=False)
+			db.delete(group)
+			db.commit()
+			return True
+		except Exception as e:
+			db.rollback()
+			logger.error(f"Error deleting media group: {str(e)}")
+			return False
+		finally:
+			db.close()
+
+	def add_media_to_group(self, group_id, media_ids):
+		"""Add existing media items to a group. Returns how many were added, or None if the group is missing."""
+		ids = sorted({int(i) for i in media_ids})
+		db = self.get_session()
+		try:
+			if not db.query(MediaGroup.id).filter(MediaGroup.id == group_id).first():
+				return None
+			if not ids:
+				return 0
+			existing = {r[0] for r in db.query(Media.id).filter(Media.id.in_(ids))}
+			already = {r[0] for r in db.query(MediaGroupItem.media_id).filter(
+				MediaGroupItem.group_id == group_id, MediaGroupItem.media_id.in_(sorted(existing)))} if existing else set()
+			new = existing - already
+			for media_id in new:
+				db.add(MediaGroupItem(group_id=group_id, media_id=media_id))
+			db.commit()
+			return len(new)
+		except Exception as e:
+			db.rollback()
+			logger.error(f"Error adding media to group: {str(e)}")
+			return None
+		finally:
+			db.close()
+
+	def remove_media_from_group(self, group_id, media_ids):
+		"""Take items out of a group. The media items themselves are not deleted."""
+		ids = sorted({int(i) for i in media_ids})
+		db = self.get_session()
+		try:
+			if not ids:
+				return 0
+			removed = (
+				db.query(MediaGroupItem)
+				.filter(MediaGroupItem.group_id == group_id, MediaGroupItem.media_id.in_(ids))
+				.delete(synchronize_session=False)
+			)
+			db.commit()
+			return removed
+		except Exception as e:
+			db.rollback()
+			logger.error(f"Error removing media from group: {str(e)}")
+			return None
+		finally:
+			db.close()
+
+	def get_media_library(self, page=1, per_page=20, search=None, group_id=None, ungrouped=False):
 		"""Retrieve media library items with pagination and search.  Features: - Full-text search - Smart pagination - Sorting options - URL generation - Metadata formatting - Performance optimization  Args: page (int): Page number to retrieve (default: 1) per_page (int): Items per page (default: 20)..."""
 		db = self.get_session()
 		try:
@@ -874,6 +1068,11 @@ class DatabaseManager:
 					| (Media.title.ilike(search))
 					| (Media.description.ilike(search))
 				)
+
+			if group_id:
+				query = query.filter(Media.id.in_(select(MediaGroupItem.media_id).where(MediaGroupItem.group_id == group_id)))
+			elif ungrouped:
+				query = query.filter(~Media.id.in_(select(MediaGroupItem.media_id)))
 
 			total = query.count()
 			total_pages = (total + per_page - 1) // per_page
@@ -914,6 +1113,20 @@ class DatabaseManager:
 						),
 					}
 				)
+
+			if items:
+				memberships = {}
+				rows = (
+					db.query(MediaGroupItem.media_id, MediaGroup.id, MediaGroup.name)
+					.join(MediaGroup, MediaGroup.id == MediaGroupItem.group_id)
+					.filter(MediaGroupItem.media_id.in_([i["id"] for i in items]))
+					.order_by(func.lower(MediaGroup.name))
+					.all()
+				)
+				for media_id, gid, gname in rows:
+					memberships.setdefault(media_id, []).append({"id": gid, "name": gname})
+				for item in items:
+					item["groups"] = memberships.get(item["id"], [])
 
 			return {
 				"items": items,
@@ -989,6 +1202,8 @@ class DatabaseManager:
 				filename = media.filename
 				thumbnail = media.thumbnail
 
+				# Foreign-key cascades are not enforced on every database, so clear group memberships explicitly.
+				db.query(MediaGroupItem).filter(MediaGroupItem.media_id == media_id).delete(synchronize_session=False)
 				db.delete(media)
 				db.commit()
 

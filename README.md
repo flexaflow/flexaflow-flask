@@ -43,7 +43,7 @@ Set these in `.env` or the environment.
 | `SESSION_COOKIE_SECURE` | `0` | Set `1` behind HTTPS (secure cookies and HSTS). |
 | `FLEXAFLOW_BEHIND_PROXY` | `0` | Set `1` behind nginx or a load balancer to trust `X-Forwarded-*`. |
 | `FLEXAFLOW_2FA_KEY` | generated into `instance/twofa.key` | Fernet key that encrypts 2FA secrets. Keep it apart from database backups. |
-| `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD` | `1` | `0` turns off extension and theme zip uploads in the browser. |
+| `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD` | `0` | `1` turns on extension and theme zip uploads in the browser. Off by default because extensions are Python code. |
 | `CACHE_TYPE` | `FileSystemCache` | `SimpleCache`, `FileSystemCache`, `RedisCache` or `NullCache` (see docs/DEPLOYMENT.md). |
 | `CACHE_REDIS_URL` | empty | Used with `CACHE_TYPE=RedisCache`. |
 | `CACHE_TIMEOUT` | `300` | Seconds a cached public page may be reused. |
@@ -153,8 +153,8 @@ Both extensions and themes declare their own `version` and `requires_core`; Flex
 **Site > Import** takes that zip (old XML exports still work). You choose which parts to import. Extensions and themes found in the file are installed but left **inactive**, so an import never conflicts with the running site; tick "switch on the same extensions and theme" to restore them as they were. Existing items with the same address are kept unless you tick Overwrite. Users and passwords are never exported.
 
 Writing one is covered in [docs/EXTENSIONS.md](docs/EXTENSIONS.md). Extensions are Python code that
-runs with full access to the site, so install only ones you trust. Set `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=0`
-to disable browser uploads (administrators only can use them anyway).
+runs with full access to the site, so install only ones you trust. Browser uploads are **off by default**; set
+`FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=1` to enable them (administrators only can use them anyway).
 
 ### Sections: choose where content is published
 

@@ -3,7 +3,7 @@ import os
 import re
 
 from markupsafe import Markup
-from PIL import Image
+from PIL import Image, ImageOps
 
 IMG_RE = re.compile(r"<img\b[^>]*>", re.I)
 SRC_RE = re.compile(r"""\bsrc\s*=\s*(["'])/uploads/([A-Za-z0-9_.\-]+)\1""", re.I)
@@ -100,3 +100,70 @@ def responsive_filter(upload_dir):
 	def _filter(html):
 		return Markup(make_responsive(str(html or ""), upload_dir))
 	return _filter
+
+
+# ---- upload verification --------------------------------------------------------------------------------------------
+# The stored extension and MIME type come from the format Pillow actually decoded, never from the client.
+SAFE_FORMATS = {"PNG": (".png", "image/png"), "JPEG": (".jpg", "image/jpeg"), "GIF": (".gif", "image/gif"), "WEBP": (".webp", "image/webp")}
+MAX_IMAGE_PIXELS = 50_000_000  # refuses decompression bombs; Pillow raises DecompressionBombError above 2x this
+
+
+class UnsafeImage(ValueError):
+	"""The upload is not a real, supported image."""
+
+
+def store_verified_image(source, dest_dir, stem):
+	"""Verify an uploaded image, re-encode it without metadata and save it under dest_dir.
+
+	source is a binary file object or a path. Only PNG, JPEG, GIF and WEBP are accepted (no SVG).
+	Re-encoding drops EXIF/GPS data and any trailing bytes, so a file that is also valid HTML or script cannot survive.
+	The file is written only after the whole image decoded; nothing is left behind on failure.
+	Returns (filename, mime_type, width, height). Raises UnsafeImage.
+	"""
+	Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+	try:
+		with Image.open(source) as probe:
+			fmt = probe.format
+			probe.verify()
+		if fmt not in SAFE_FORMATS:
+			raise UnsafeImage("Unsupported image format.")
+		if hasattr(source, "seek"):
+			source.seek(0)
+		with Image.open(source) as img:
+			img.load()
+			animated = getattr(img, "is_animated", False) and fmt in ("GIF", "WEBP")
+			if animated:
+				frames = []
+				for i in range(img.n_frames):
+					img.seek(i)
+					frames.append(img.copy())
+				first, rest = frames[0], frames[1:]
+				width, height = first.size
+			else:
+				first = ImageOps.exif_transpose(img) if fmt == "JPEG" else img.copy()
+				rest = []
+				width, height = first.size
+			ext, mime = SAFE_FORMATS[fmt]
+			filename = f"{stem}{ext}"
+			os.makedirs(dest_dir, exist_ok=True)
+			path = os.path.join(dest_dir, filename)
+			try:
+				if fmt == "JPEG":
+					if first.mode not in ("RGB", "L", "CMYK"):
+						first = first.convert("RGB")
+					first.save(path, "JPEG", quality=92, optimize=True)
+				elif animated:
+					first.save(path, fmt, save_all=True, append_images=rest, loop=img.info.get("loop", 0), duration=img.info.get("duration", 100))
+				else:
+					first.save(path, fmt)
+			except Exception:
+				try:
+					os.remove(path)
+				except OSError:
+					pass
+				raise
+		return filename, mime, width, height
+	except UnsafeImage:
+		raise
+	except Exception as exc:  # decode errors, bombs, truncated files
+		raise UnsafeImage("The file is not a valid image.") from exc

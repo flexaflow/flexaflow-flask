@@ -64,7 +64,7 @@ Extension code can import core modules such as `data_store` and `content_store` 
 
 ## Rules and safety
 
-- Extensions are Python code with full access to the site. Admins should only install extensions they trust. Only administrators can install, and uploads can be disabled with `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=0`.
+- Extensions are Python code with full access to the site. Admins should only install extensions they trust. Only administrators can install, and browser uploads are off by default and enabled with `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=1`.
 - The installer rejects archives with unsafe paths or links and limits archive size.
 - A theme name that already exists (and was not installed by the same extension) is never overwritten.
 - If `register()` raises, the extension is not activated and the error is shown on the Extensions screen.

@@ -6,12 +6,36 @@
 				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 			</div>
 			<div class="modal-body">
+				<form id="mediaPickerSearchForm" class="mb-3" role="search">
+					<div class="input-group">
+						<select class="form-select" id="mediaPickerGroup" style="max-width:200px" aria-label="Show images from group">
+							<option value="">All groups</option>
+						</select>
+						<input type="search" class="form-control" id="mediaPickerSearch" placeholder="Search by filename or title…" aria-label="Search images">
+						<button class="btn btn-outline-secondary" type="submit">Search</button>
+					</div>
+				</form>
+				<div class="small text-muted mb-2" id="mediaPickerCount" aria-live="polite"></div>
 				<div id="mediaPickerGrid" class="media-grid"></div>
+				<div id="mediaPickerPager" class="mt-3 d-none">
+					<div class="d-flex justify-content-between align-items-center">
+						<button type="button" class="btn btn-sm btn-outline-secondary" id="mediaPickerPrev">&larr; Previous</button>
+						<span class="small text-muted" id="mediaPickerPageLabel"></span>
+						<button type="button" class="btn btn-sm btn-outline-secondary" id="mediaPickerNext">Next &rarr;</button>
+					</div>
+				</div>
 				<p class="small text-muted mt-3 mb-0">Need a new image? Upload it in <a href="/admin/media" target="_blank" rel="noopener">Media</a>, then reopen this picker.</p>
 			</div>
 			<div class="modal-footer">
+				<div id="mediaPickerSizeWrap" class="me-auto d-none align-items-center gap-2">
+					<label for="mediaPickerSize" class="small mb-0">Image size</label>
+					<select id="mediaPickerSize" class="form-select form-select-sm" style="width:auto">
+						<option value="fit" selected>Auto fit to width (recommended)</option>
+						<option value="original">Keep original size</option>
+					</select>
+				</div>
 				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-				<button type="button" class="btn btn-primary" id="mediaPickerInsert">Use image</button>
+				<button type="button" class="btn btn-primary" id="mediaPickerInsert" disabled>Use image</button>
 			</div>
 		</div>
 	</div>
@@ -19,47 +43,207 @@
 
 <script>
 (function ($) {
+	var PAGE_SIZE_HINT = 20;
 	var pickCallback = null;
-	var selectedUrl = null;
+	var pickOptions = {};
+	var selectedItem = null;
+	var currentItems = [];
+	var state = { page: 1, totalPages: 1, search: '', group: '' };
+	var requestSeq = 0;      // ignores responses to searches or pages that were superseded
+	var searchTimer = null;
 
-	window.openMediaPicker = function (onPick) {
-		pickCallback = onPick;
-		selectedUrl = null;
-		var $grid = $('#mediaPickerGrid').html('<p class="text-muted">Loading images…</p>');
-		fetch('/admin/media?format=json')
-			.then(function (r) { return r.json(); })
+	var $grid = $('#mediaPickerGrid');
+	var $count = $('#mediaPickerCount');
+	var $pager = $('#mediaPickerPager');
+	var $insert = $('#mediaPickerInsert');
+	var modalEl = document.getElementById('mediaPickerModal');
+
+	function showModal() {
+		bootstrap.Modal.getOrCreateInstance(modalEl).show();
+	}
+
+	function hideModal() {
+		bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+	}
+
+	function setSelection(item) {
+		selectedItem = item || null;
+		$insert.prop('disabled', !selectedItem);
+	}
+
+	function renderPager() {
+		$pager.toggleClass('d-none', state.totalPages <= 1);
+		$('#mediaPickerPageLabel').text('Page ' + state.page + ' of ' + state.totalPages);
+		$('#mediaPickerPrev').prop('disabled', state.page <= 1);
+		$('#mediaPickerNext').prop('disabled', state.page >= state.totalPages);
+	}
+
+	function renderItems(data) {
+		currentItems = data.items || [];
+		state.page = data.page || 1;
+		state.totalPages = data.total_pages || 1;
+		setSelection(null);
+		$grid.empty();
+
+		if (!currentItems.length) {
+			var empty = state.search
+				? 'No images match “' + state.search + '”.'
+				: 'No images yet. Upload one in Media, then reopen this picker.';
+			$grid.append($('<p class="text-muted mb-0"></p>').text(empty));
+		}
+
+		currentItems.forEach(function (item, index) {
+			var $el = $('<div class="media-item"></div>')
+				.attr({ 'data-index': index, 'data-url': item.url, role: 'button', tabindex: 0 });
+			$el.append($('<img>').attr({
+				src: item.thumbnail_url || item.url,
+				alt: item.alt_text || item.original_filename || '',
+				loading: 'lazy'
+			}));
+			$el.append($('<small class="text-muted d-block mt-1 text-truncate"></small>')
+				.attr('title', item.original_filename || '')
+				.text(item.width && item.height ? item.width + ' × ' + item.height : ''));
+			$grid.append($el);
+		});
+
+		var perPage = data.per_page || PAGE_SIZE_HINT;
+		var start = data.total ? (state.page - 1) * perPage + 1 : 0;
+		var end = start ? start + currentItems.length - 1 : 0;
+		$count.text(data.total
+			? 'Showing ' + start + '–' + end + ' of ' + data.total + (state.search ? ' matching' : '') + ' images'
+			: '');
+		renderPager();
+	}
+
+	function showError() {
+		currentItems = [];
+		setSelection(null);
+		$grid.html('<p class="text-danger mb-0">Could not load the media library. Try again.</p>');
+		$count.text('');
+		$pager.addClass('d-none');
+	}
+
+	function loadPage(page) {
+		var seq = ++requestSeq;
+		var params = new URLSearchParams({ format: 'json', page: String(page) });
+		if (state.search) { params.set('search', state.search); }
+		if (state.group) { params.set('group', state.group); }
+
+		$grid.html('<p class="text-muted mb-0">Loading images…</p>');
+		$count.text('');
+		$pager.addClass('d-none');
+
+		fetch('/admin/media?' + params.toString(), { credentials: 'same-origin' })
+			.then(function (r) {
+				if (!r.ok) { throw new Error('HTTP ' + r.status); }
+				return r.json();
+			})
 			.then(function (data) {
-				var items = data.items || [];
-				$grid.empty();
-				if (!items.length) {
-					$grid.html('<p class="text-muted">No images yet.</p>');
-				}
-				items.forEach(function (item) {
-					var $el = $('<div class="media-item"></div>').attr('data-url', item.url);
-					$el.append($('<img>').attr('src', item.url).attr('alt', item.alt_text || item.original_filename || ''));
-					var size = item.width && item.height ? item.width + ' × ' + item.height : '';
-					$el.append($('<small class="text-muted d-block mt-1"></small>').text(size));
-					$grid.append($el);
-				});
-				bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).show();
+				if (seq === requestSeq) { renderItems(data); }
 			})
 			.catch(function () {
-				$grid.html('<p class="text-danger">Could not load the media library.</p>');
-				bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).show();
+				if (seq === requestSeq) { showError(); }
 			});
+	}
+
+	function runSearch() {
+		clearTimeout(searchTimer);
+		state.search = $('#mediaPickerSearch').val().trim();
+		loadPage(1);
+	}
+
+	function insertSelected() {
+		if (!selectedItem || !pickCallback) { return; }
+		var size = $('#mediaPickerSize').val();
+		pickCallback(selectedItem.url, selectedItem, size);
+		hideModal();
+	}
+
+	// options.withSize: show the "Auto fit / Keep original size" choice (used by the editor).
+	function loadGroups() {
+		fetch('/admin/media/groups', { credentials: 'same-origin' })
+			.then(function (r) { if (!r.ok) { throw new Error(); } return r.json(); })
+			.then(function (data) {
+				var $sel = $('#mediaPickerGroup');
+				$sel.find('option:not(:first)').remove();
+				(data.groups || []).forEach(function (g) {
+					$sel.append($('<option></option>').val(String(g.id)).text(g.name + ' (' + g.count + ')'));
+				});
+				$sel.val(state.group);
+				if ($sel.val() !== state.group) { state.group = ''; $sel.val(''); }
+			})
+			.catch(function () { /* the picker still works without the group filter */ });
+	}
+
+	$('#mediaPickerGroup').on('change', function () {
+		state.group = $(this).val();
+		loadPage(1);
+	});
+
+	window.openMediaPicker = function (onPick, options) {
+		pickCallback = onPick;
+		pickOptions = options || {};
+		state.search = '';
+		state.page = 1;
+		setSelection(null);
+
+		$('#mediaPickerSearch').val('');
+		$('#mediaPickerGroup').val('');
+		state.group = '';
+		loadGroups();
+		$('#mediaPickerSize').val('fit');
+		$('#mediaPickerSizeWrap')
+			.toggleClass('d-none', !pickOptions.withSize)
+			.toggleClass('d-flex', !!pickOptions.withSize);
+
+		showModal();
+		loadPage(1);
 	};
 
 	$(document).on('click', '#mediaPickerGrid .media-item', function () {
 		$('#mediaPickerGrid .media-item').removeClass('selected-media');
 		$(this).addClass('selected-media');
-		selectedUrl = $(this).attr('data-url');
+		setSelection(currentItems[parseInt($(this).attr('data-index'), 10)]);
 	});
 
-	$('#mediaPickerInsert').on('click', function () {
-		if (selectedUrl && pickCallback) {
-			pickCallback(selectedUrl);
+	$(document).on('dblclick', '#mediaPickerGrid .media-item', function () {
+		$(this).trigger('click');
+		insertSelected();
+	});
+
+	$(document).on('keydown', '#mediaPickerGrid .media-item', function (e) {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			$(this).trigger('click');
 		}
-		bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaPickerModal')).hide();
+	});
+
+	$('#mediaPickerSearchForm').on('submit', function (e) {
+		e.preventDefault();
+		runSearch();
+	});
+
+	$('#mediaPickerSearch').on('input', function () {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(runSearch, 350);
+	});
+
+	$('#mediaPickerPrev').on('click', function () {
+		if (state.page > 1) {
+			loadPage(state.page - 1);
+			$grid.closest('.modal-body').scrollTop(0);
+		}
+	});
+
+	$('#mediaPickerNext').on('click', function () {
+		if (state.page < state.totalPages) {
+			loadPage(state.page + 1);
+			$grid.closest('.modal-body').scrollTop(0);
+		}
+	});
+
+	$insert.on('click', function () {
+		insertSelected();
 	});
 })(window.jQuery);
 </script>

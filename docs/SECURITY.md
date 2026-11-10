@@ -23,8 +23,14 @@ The CSP does not restrict `script-src` or `style-src`, because the admin loads T
 - Only administrators can install them.
 - Install only packages you wrote or trust, and read the code first.
 - The admin shows a trust warning and a SHA-256 of the package before an extension or theme is activated.
-- Set `FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=0` to disable browser uploads on a production server and install from the command line instead.
+- Browser uploads of extensions and themes are **off by default** (`FLEXAFLOW_ALLOW_EXTENSION_UPLOAD=0`). Set it to `1` only if you need them; otherwise install from the command line.
 
 ## Reporting a vulnerability
 
 Please open a private security advisory on the GitHub repository rather than a public issue.
+
+## Uploads
+
+- `/admin/media/upload`, `/upload_image`, the migration importer and image files sent to `/admin/upload_file` all go through `images.store_verified_image`: the file must decode as PNG, JPEG, GIF or WEBP (SVG is not accepted), is limited to 50 megapixels, and is re-encoded. Re-encoding removes EXIF/GPS metadata and any trailing bytes, so an image that is also valid HTML cannot survive.
+- The stored extension and MIME type come from the decoded format, never from the client filename or `Content-Type`. Nothing is left on disk when verification fails.
+- `/uploads/<name>` sends `X-Content-Type-Options: nosniff` and a locked-down CSP; anything that is not an image, PDF or plain text is sent as a download.

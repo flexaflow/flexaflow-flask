@@ -10,7 +10,7 @@ from auth import capability_required
 
 
 def init(app, current_theme, switch_theme):
-	allow_upload = os.environ.get("FLEXAFLOW_ALLOW_EXTENSION_UPLOAD", "1") != "0"
+	allow_upload = os.environ.get("FLEXAFLOW_ALLOW_EXTENSION_UPLOAD", "0") == "1"
 
 	@app.route("/admin/themes")
 	@capability_required("manage_extensions")
