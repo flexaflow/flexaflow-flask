@@ -315,7 +315,7 @@
 		card.querySelector('.f-slug').addEventListener('input', function () { slugEdited = true; });
 		card.querySelector('.f-name').addEventListener('input', function () {
 			if (!slugEdited) {
-				card.querySelector('.f-slug').value = this.value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/[\s-]+/g, '-');
+				card.querySelector('.f-slug').value = this.value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}\s-]/gu, '').trim().replace(/[\s-]+/g, '-');
 			}
 		});
 		card.addEventListener('input', function () { refreshSummary(card); markDirty(card, true); });
