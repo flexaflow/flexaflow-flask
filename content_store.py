@@ -367,7 +367,8 @@ def _file(value: Any) -> str:
 
 
 def slugify_name(text: str) -> str:
-	text = re.sub(r"[^\w\s-]", "", (text or "").lower(), flags=re.UNICODE)
+	#text = re.sub(r"[^\w\s-]", "", (text or "").lower(), flags=re.UNICODE)
+	text = re.sub(r"[^\w\s\-ঀ-৿]", "", (text or "").lower(), flags=re.UNICODE)
 	return re.sub(r"[\s_-]+", "-", text).strip("-")
 
 
