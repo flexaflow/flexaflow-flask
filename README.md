@@ -13,8 +13,18 @@ themes and extensions, with a WordPress-style admin.
 
 
 # for testing and development
-- run with  ```python server.py``` 
-
+- run with
+```
+export FLASK_APP=app.py
+export FLASK_DEBUG=1
+flask run
+```
+--or
+```
+export FLASK_APP=app.py
+export FLASK_DEBUG=1
+flask run --host=127.0.0.1 --port=5000
+```
 
 ## Quick start
 
