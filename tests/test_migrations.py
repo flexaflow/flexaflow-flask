@@ -16,7 +16,7 @@ def test_fresh_database_reaches_head(tmp_path):
 	out = _run(db, "import data_store")
 	assert out.returncode == 0, out.stderr
 	con = sqlite3.connect(db)
-	assert con.execute("select version_num from alembic_version").fetchone()[0] == "0004"
+	assert con.execute("select version_num from alembic_version").fetchone()[0] == "0005"
 	tables = {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
 	assert {"users", "posts", "revisions", "redirects", "comments", "contact_messages", "login_attempts"} <= tables
 	assert "admin_setup" not in tables
