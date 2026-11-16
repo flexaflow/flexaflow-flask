@@ -10,6 +10,12 @@ themes and extensions, with a WordPress-style admin.
 
 > Status: version 1.1.x. It has a test suite, but review the [security notes](docs/SECURITY.md) and test your own setup before exposing it to the internet.
 
+
+
+# for testing and development
+- run with  ```python server.py``` 
+
+
 ## Quick start
 
 ```bash
