@@ -735,8 +735,12 @@ def _user_form_from_request():
 	}
 
 
+
+
+
+
+"""
 def _clean_menu(items, depth=0):
-	"""Menu items as {label, url, children[]}: keeps only safe link targets, at most two levels deep."""
 	cleaned = []
 	for item in items if isinstance(items, list) else []:
 		if not isinstance(item, dict):
@@ -752,6 +756,35 @@ def _clean_menu(items, depth=0):
 				entry["children"] = children
 			cleaned.append(entry)
 	return cleaned
+"""
+
+
+
+
+MENU_MAX_DEPTH = 4  # top item + 3 levels of sub-items
+
+def _clean_menu(items, depth=0):
+	cleaned = []
+	for item in items if isinstance(items, list) else []:
+		if not isinstance(item, dict):
+			continue
+		label = str(item.get("label") or "").strip()[:100]
+		url = str(item.get("url") or "").strip()[:500]
+		if url and not re.match(r"^(https?://|mailto:|tel:|/|#)", url):
+			url = ""
+		children = _clean_menu(item.get("children"), depth + 1) if depth + 1 < MENU_MAX_DEPTH else []
+		if label and (url or children):
+			entry = {"label": label, "url": url}
+			if children:
+				entry["children"] = children
+			cleaned.append(entry)
+	return cleaned
+
+
+
+
+
+
 
 
 PUBLIC_PER_PAGE = 10
