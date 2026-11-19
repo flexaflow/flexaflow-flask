@@ -4,12 +4,14 @@
 {% block head %}
 <style>
 	.menu-item { background:#fff; border:1px solid #dee2e6; border-radius:.4rem; margin-bottom:.6rem; }
-	.menu-item .head { display:flex; gap:.5rem; align-items:center; padding:.5rem .6rem; }
-	.menu-item .head .form-control { min-width:0; }
-	.menu-item .children { padding:0 .6rem .6rem 2.2rem; }
-	.menu-item .child { display:flex; gap:.5rem; align-items:center; margin-top:.4rem; }
-	.menu-item .child .form-control { min-width:0; }
-	.menu-item .btn-icon { padding:.15rem .45rem; }
+	.node .head { display:flex; gap:.5rem; align-items:center; }
+	.menu-item > .head { padding:.5rem .6rem; }
+	.node .head .form-control { min-width:0; }
+	.menu-item > .children { padding:0 .6rem .6rem 2.2rem; }
+	.menu-sub { margin-top:.4rem; }
+	.menu-sub > .head { padding:0; }
+	.menu-sub > .children { padding:0 0 0 1.6rem; border-left:2px solid #e9ecef; margin-left:.4rem; }
+	.node .btn-icon { padding:.15rem .45rem; }
 	.quick-list .list-group-item { padding:.35rem .75rem; font-size:.88rem; }
 </style>
 {% endblock %}
@@ -68,8 +70,10 @@
 <script id="menuData" type="application/json">{{ menu_items|tojson }}</script>
 <script>
 (function () {
+	var MAX_DEPTH = 4; // menu levels: top item + 3 levels of sub-items
 	var tree = document.getElementById('menuTree');
 	var target = document.getElementById('addTarget');
+	var targetNodes = [];
 
 	function el(tag, attrs, kids) {
 		var n = document.createElement(tag);
@@ -82,65 +86,81 @@
 		b.addEventListener('click', fn); return b;
 	}
 	function field(cls, value, ph) { var i = el('input', {type: 'text', 'class': 'form-control form-control-sm ' + cls, placeholder: ph}); i.value = value || ''; return i; }
+	function isNode(n) { return n && n.classList && n.classList.contains('node'); }
+	function headOf(node) { return node.querySelector(':scope > .head'); }
+	function kidsOf(node) { return node.querySelector(':scope > .children'); }
+	function labelOf(node) { return headOf(node).querySelector('.n-label').value; }
 
-	function childRow(c) {
-		var row = el('div', {'class': 'child'});
-		row.appendChild(field('c-label', c.label, 'Label'));
-		row.appendChild(field('c-url', c.url, '/address'));
-		row.appendChild(btn('↑', 'Move up', function () { var p = row.previousElementSibling; if (p && p.classList.contains('child')) { row.parentNode.insertBefore(row, p); } }));
-		row.appendChild(btn('↓', 'Move down', function () { var n = row.nextElementSibling; if (n) { row.parentNode.insertBefore(n, row); } }));
-		row.appendChild(btn('✕', 'Remove', function () { row.remove(); }, 'btn-outline-danger'));
-		return row;
-	}
-	function itemCard(item) {
-		var card = el('div', {'class': 'menu-item'});
+	// One menu item at any depth (0 = top level). Sub-items are built the same way, recursively.
+	function buildNode(item, depth) {
+		var node = el('div', {'class': 'node ' + (depth === 0 ? 'menu-item' : 'menu-sub')});
+		node.dataset.depth = String(depth);
+		var parentBox = function () { return node.parentNode; };
 		var head = el('div', {'class': 'head'});
-		head.appendChild(field('i-label', item.label, 'Label'));
-		head.appendChild(field('i-url', item.url, '/address (optional for dropdowns)'));
-		head.appendChild(btn('↑', 'Move up', function () { var p = card.previousElementSibling; if (p) { tree.insertBefore(card, p); refreshTargets(); } }));
-		head.appendChild(btn('↓', 'Move down', function () { var n = card.nextElementSibling; if (n) { tree.insertBefore(n, card); refreshTargets(); } }));
-		head.appendChild(btn('✕', 'Remove', function () { if (confirm('Remove this menu item and its sub-items?')) { card.remove(); refreshTargets(); } }, 'btn-outline-danger'));
-		card.appendChild(head);
+		head.appendChild(field('n-label', item.label, 'Label'));
+		head.appendChild(field('n-url', item.url, depth === 0 ? '/address (optional for dropdowns)' : '/address'));
+		head.appendChild(btn('↑', 'Move up', function () { var p = node.previousElementSibling; if (isNode(p)) { parentBox().insertBefore(node, p); refreshTargets(); } }));
+		head.appendChild(btn('↓', 'Move down', function () { var n = node.nextElementSibling; if (isNode(n)) { parentBox().insertBefore(n, node); refreshTargets(); } }));
+		head.appendChild(btn('✕', 'Remove', function () {
+			var hasKids = kidsOf(node).querySelector('.node');
+			if (!hasKids || confirm('Remove this menu item and its sub-items?')) { node.remove(); refreshTargets(); }
+		}, 'btn-outline-danger'));
+		node.appendChild(head);
+
 		var kids = el('div', {'class': 'children'});
-		(item.children || []).forEach(function (c) { kids.appendChild(childRow(c)); });
-		var add = el('button', {type: 'button', 'class': 'btn btn-sm btn-link p-0 mt-2', text: '+ Add sub-item'});
-		add.addEventListener('click', function () { var r = childRow({label: '', url: ''}); kids.insertBefore(r, add); r.querySelector('input').focus(); });
-		kids.appendChild(add);
-		card.appendChild(kids);
-		card.querySelector('.i-label').addEventListener('input', refreshTargets);
-		return card;
+		(item.children || []).forEach(function (c) { kids.appendChild(buildNode(c, depth + 1)); });
+		if (depth + 1 < MAX_DEPTH) {
+			var add = el('button', {type: 'button', 'class': 'btn btn-sm btn-link p-0 mt-2 js-add-sub', text: '+ Add sub-item'});
+			add.addEventListener('click', function () {
+				var r = buildNode({label: '', url: ''}, depth + 1);
+				kids.insertBefore(r, add); r.querySelector('input').focus(); refreshTargets();
+			});
+			kids.appendChild(add);
+		}
+		node.appendChild(kids);
+		head.querySelector('.n-label').addEventListener('input', refreshTargets);
+		return node;
 	}
+
+	// "Add to" list: the top level plus every item that can still hold sub-items.
 	function refreshTargets() {
 		var keep = target.value;
 		while (target.options.length > 1) { target.remove(1); }
-		Array.prototype.forEach.call(tree.children, function (card, i) {
-			var o = el('option', {value: String(i), text: 'Dropdown: ' + (card.querySelector('.i-label').value || '(unnamed)')}); target.appendChild(o);
+		targetNodes = [];
+		Array.prototype.forEach.call(tree.querySelectorAll('.node'), function (node) {
+			var depth = +node.dataset.depth;
+			if (depth + 1 >= MAX_DEPTH) { return; }
+			var pad = new Array(depth + 1).join('\u2003');
+			var o = el('option', {value: String(targetNodes.length), text: pad + (depth === 0 ? 'Dropdown: ' : '\u21b3 ') + (labelOf(node) || '(unnamed)')});
+			target.appendChild(o); targetNodes.push(node);
 		});
 		target.value = keep && target.querySelector('option[value="' + keep + '"]') ? keep : '';
 		document.getElementById('menuEmpty').hidden = tree.children.length > 0;
 	}
 	function addLink(label, url) {
 		if (target.value === '') {
-			var card = itemCard({label: label, url: url, children: []}); tree.appendChild(card);
+			tree.appendChild(buildNode({label: label, url: url, children: []}, 0));
 		} else {
-			var parent = tree.children[+target.value]; var kids = parent.querySelector('.children');
-			kids.insertBefore(childRow({label: label, url: url}), kids.lastElementChild);
+			var parent = targetNodes[+target.value];
+			var kids = kidsOf(parent);
+			var addBtn = kids.querySelector(':scope > .js-add-sub');
+			kids.insertBefore(buildNode({label: label, url: url}, +parent.dataset.depth + 1), addBtn);
 		}
 		refreshTargets();
 	}
+	function collectNode(node) {
+		var head = headOf(node);
+		var item = {label: head.querySelector('.n-label').value.trim(), url: head.querySelector('.n-url').value.trim()};
+		var kids = Array.prototype.filter.call(kidsOf(node).children, isNode).map(collectNode).filter(Boolean);
+		if (kids.length) { item.children = kids; }
+		return (item.label && (item.url || item.children)) ? item : null;
+	}
 	function collect() {
-		return Array.prototype.map.call(tree.children, function (card) {
-			var kids = Array.prototype.map.call(card.querySelectorAll('.child'), function (r) {
-				return {label: r.querySelector('.c-label').value.trim(), url: r.querySelector('.c-url').value.trim()};
-			}).filter(function (c) { return c.label && c.url; });
-			var item = {label: card.querySelector('.i-label').value.trim(), url: card.querySelector('.i-url').value.trim()};
-			if (kids.length) { item.children = kids; }
-			return item;
-		}).filter(function (i) { return i.label && (i.url || i.children); });
+		return Array.prototype.map.call(tree.children, collectNode).filter(Boolean);
 	}
 
 	var initial = []; try { initial = JSON.parse(document.getElementById('menuData').textContent) || []; } catch (e) {}
-	initial.forEach(function (i) { tree.appendChild(itemCard(i)); });
+	initial.forEach(function (i) { tree.appendChild(buildNode(i, 0)); });
 	refreshTargets();
 
 	document.getElementById('addMenuForm').addEventListener('submit', function (e) {
