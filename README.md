@@ -152,8 +152,6 @@ From the command line: `python manage.py ext-install file.zip --activate`, `ext-
 
 Included with this download (in separate zips, like WordPress plugins and themes):
 
-- `briu-cse-extension.zip` – Faculty and Officer & Staff directories, the *Academics* admin menu and the Notices/News/Events sections. No sample data.
-- `briu-cse-theme.zip` – the department theme (upload under **Site > Themes**, then Activate).
 - `hello-world-extension.zip` – a tiny example to copy when writing your own.
 
 Both extensions and themes declare their own `version` and `requires_core`; FlexaFlow refuses to install or activate one that needs a newer core.
@@ -194,14 +192,12 @@ The Pages tab on the dashboard and the People editors have their own quick searc
 
 ### People directories
 
-An extension can register profile directories (the BRIU CSE one adds **Faculty** at `/faculty/` and
-**Officer & Staff** at `/officer-and-staff/`). They appear under **People** in the admin menu. Each card is saved on its own;
+An extension can register profile directories. They appear under **People** in the admin menu. Each card is saved on its own;
 cards can be reordered, hidden as drafts, deleted, imported from and exported to JSON.
 
 ### Page templates
 
-The active theme can provide page templates with custom fields (the BRIU CSE theme adds *Department landing*,
-*Academic program* and *Documents* pages). They are listed under **Pages > + New ...** in the admin menu.
+The active theme can provide page templates with custom fields . They are listed under **Pages > + New ...** in the admin menu.
 
 ## Security
 
