@@ -267,7 +267,7 @@
 		body.appendChild(grid);
 
 		var emails = (rec.emails && rec.emails.length) ? rec.emails : [''];
-		body.appendChild(listFieldset('Email addresses', 'emails-list', emails, '+ Add email', function (l, v) { simpleRow(l, 'email-input', v, 'name@briu.ac.bd', 'email'); }, ''));
+		body.appendChild(listFieldset('Email addresses', 'emails-list', emails, '+ Add email', function (l, v) { simpleRow(l, 'email-input', v, '', 'email'); }, ''));
 
 		if (has('profiles')) {
 			var site = rec.personal_site || {};
