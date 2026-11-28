@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — admin cache, pages and settings
+
+### Added
+- **Clear cache** button in *Site → Settings* (section *Cache*). It forgets cached public pages and compiled templates in every worker and reloads the theme.
+- **Page cache** is now an admin setting: enable or disable it, and choose how many seconds each page is kept (default 300).
+- **Pages screen** at `/admin/pages` with search (title, address, description and text), status and template filters, sorting, and bulk *Publish*, *Move to draft* and *Delete*. The dashboard and *Pages* menu link to it.
+
+### Fixed
+- The logo and favicon *Choose* buttons on the settings page now open the shared media gallery again. The old modal read the wrong fields from the media API and showed nothing.
+- Theme and cache changes now reach every gunicorn worker at their next request. Before, only the worker that saved the change updated, so visitors could see the old theme or old pages for a while.
+- Logo and favicon URLs carry a version suffix that changes on every cache clear, so a new image is not hidden by the browser's one-day static cache.
+
+### Changed
+- Site settings and *Categories & tags* now use the standard admin layout (navigation, alerts and the same styling as the other admin screens).
+
 ## Unreleased — image groups
 
 ### Added

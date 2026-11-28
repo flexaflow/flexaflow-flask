@@ -1,74 +1,103 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Manage Tags and Categories</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link href="/static/bootstrap-and-related/bootstrap.min.css" rel="stylesheet">
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="/static/admin/admin.js"></script>
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/admin">Admin Dashboard</a>
-            <div>
-                <a href="/admin/settings" class="btn btn-outline-light me-2">Site Settings</a>
-                <a href="/admin/menu" class="btn btn-outline-light me-2">Menu Editor</a>
-                <a href="/" class="btn btn-outline-light">View Site</a>
-            </div>
-        </div>
-    </nav>
-    <div class="container mt-4">
-        <h2>Manage Tags and Categories</h2>
-        <div class="row">
-            <div class="col-md-6 mb-4">
-                <h4>Add Category</h4>
-                <form method="post" action="/admin/category/add" class="d-flex flex-wrap align-items-center mb-3">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="text" name="name" class="form-control me-2 mb-2" placeholder="Category Name (unique)" required>
-                    <button type="submit" class="btn btn-primary mb-2">Add Category</button>
-                </form>
-                <h5>All Categories</h5>
-                <ul class="list-group">
-                    {% for slug, cat in categories.items() %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <span><strong>{{ cat.name }}</strong> ({{ cat.post_count or 0 }})</span>
-                        {% if slug in unused_categories %}
-                        <form method="post" action="/admin/category/delete/{{ slug }}" style="display:inline;">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused category?')">Delete</button>
-                        </form>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-            <div class="col-md-6 mb-4">
-                <h4>Add Tag</h4>
-                <form method="post" action="/admin/tag/add" class="d-flex flex-wrap align-items-center mb-3">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="text" name="name" class="form-control me-2 mb-2" placeholder="Tag Name" required>
-                    <button type="submit" class="btn btn-primary mb-2">Add Tag</button>
-                </form>
-                <h5>All Tags</h5>
-                <ul class="list-group">
-                    {% for tag, tag_obj in tags.items() %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <span><strong>{{ tag_obj.name or tag }}</strong> ({{ tag_obj.count or 0 }})</span>
-                        {% if tag in unused_tags %}
-                        <form method="post" action="/admin/tag/delete/{{ tag_obj.id }}" style="display:inline;">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete unused tag?')">Delete</button>
-                        </form>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
-    </div>
-    <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-    <script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+{% extends "_admin_layout.html" %}
+{% block title %}Categories &amp; tags{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-2">Categories &amp; tags</h1>
+	<div class="mb-2">
+		<a href="/admin/settings" class="btn btn-sm btn-outline-primary me-2">Site settings</a>
+		<a href="/admin/posts" class="btn btn-sm btn-outline-primary">All posts</a>
+	</div>
+</div>
+<p class="small text-muted mb-3">Categories sort posts into sections of the site. Tags are free labels for posts. Only unused items can be deleted.</p>
+
+<div class="row g-4">
+	<div class="col-lg-6">
+		<div class="card h-100">
+			<div class="card-header bg-white d-flex justify-content-between align-items-center">
+				<strong>Categories</strong>
+				<span class="badge text-bg-light border">{{ categories|length }}</span>
+			</div>
+			<div class="card-body">
+				<form method="post" action="/admin/category/add" class="row g-2 align-items-center mb-3">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+					<div class="col">
+						<label class="visually-hidden" for="categoryName">Category name</label>
+						<input type="text" id="categoryName" name="name" class="form-control" placeholder="New category name (unique)" required>
+					</div>
+					<div class="col-auto">
+						<button type="submit" class="btn btn-primary">Add category</button>
+					</div>
+				</form>
+			</div>
+			<div class="table-responsive">
+				<table class="table table-hover mb-0 align-middle">
+					<thead class="table-light"><tr><th>Name</th><th>Section</th><th class="text-end">Posts</th><th></th></tr></thead>
+					<tbody>
+					{% for slug, cat in categories.items() %}
+						<tr>
+							<td><strong>{{ cat.name }}</strong></td>
+							<td class="small">{% if cat.section_path %}<code>/{{ cat.section_path }}/</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+							<td class="text-end">{{ cat.post_count or 0 }}</td>
+							<td class="text-end">
+								{% if slug in unused_categories %}
+								<form method="post" action="/admin/category/delete/{{ slug }}" class="d-inline" onsubmit="return confirm('Delete this unused category?');">
+									<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+									<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+								</form>
+								{% endif %}
+							</td>
+						</tr>
+					{% else %}
+						<tr><td colspan="4" class="text-center text-muted py-4">No categories yet.</td></tr>
+					{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<div class="col-lg-6">
+		<div class="card h-100">
+			<div class="card-header bg-white d-flex justify-content-between align-items-center">
+				<strong>Tags</strong>
+				<span class="badge text-bg-light border">{{ tags|length }}</span>
+			</div>
+			<div class="card-body">
+				<form method="post" action="/admin/tag/add" class="row g-2 align-items-center mb-3">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+					<div class="col">
+						<label class="visually-hidden" for="tagName">Tag name</label>
+						<input type="text" id="tagName" name="name" class="form-control" placeholder="New tag name" required>
+					</div>
+					<div class="col-auto">
+						<button type="submit" class="btn btn-primary">Add tag</button>
+					</div>
+				</form>
+			</div>
+			<div class="table-responsive">
+				<table class="table table-hover mb-0 align-middle">
+					<thead class="table-light"><tr><th>Name</th><th class="text-end">Posts</th><th></th></tr></thead>
+					<tbody>
+					{% for tag, tag_obj in tags.items() %}
+						<tr>
+							<td><strong>{{ tag_obj.name or tag }}</strong></td>
+							<td class="text-end">{{ tag_obj.count or 0 }}</td>
+							<td class="text-end">
+								{% if tag in unused_tags %}
+								<form method="post" action="/admin/tag/delete/{{ tag_obj.id }}" class="d-inline" onsubmit="return confirm('Delete this unused tag?');">
+									<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+									<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+								</form>
+								{% endif %}
+							</td>
+						</tr>
+					{% else %}
+						<tr><td colspan="3" class="text-center text-muted py-4">No tags yet.</td></tr>
+					{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
+{% endblock %}

@@ -1,275 +1,287 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Site Settings - Admin</title>
-    <link rel="icon" type="image/x-icon" href="{{ settings.favicon }}">
-    <link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
-    <style>
-        .settings-section { margin-bottom: 2.5rem; }
-        .settings-label { font-weight: 500; }
-        .twofa-status { font-size: 1rem; margin-bottom: 0.5rem; }
-    </style>
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="/static/admin/admin.js"></script>
-</head>
-<body>
-<nav class="navbar navbar-dark bg-dark mb-4">
-    <div class="container">
-        <a class="navbar-brand" href="/admin">Admin Dashboard</a>
-        <div>
-            <a href="/admin/menu" class="btn btn-outline-light me-2">Menu Editor</a>
-            <a href="/" class="btn btn-outline-light">View Site</a>
-            <a href="/logout" class="btn btn-outline-light ms-2">Logout</a>
-        </div>
-    </div>
-</nav>
-<div class="container">
-    <h2 class="mb-4">Site Settings</h2>
-    <a href="/admin/tags-and-catagories" class="btn btn-info mb-3">Manage Tags & Categories</a>
-    <div class="card mb-4">
-        <div class="card-body">
-            <form id="settingsForm">
-                <div class="settings-section">
-                    <h4>General</h4>
-                    <div class="mb-3">
-                        <label class="settings-label" for="themeSelect">Theme</label>
-                        <select class="form-select" id="themeSelect" name="theme">
-                            {% for t in themes %}
-                            <option value="{{ t }}" {{ 'selected' if t == settings.theme }}>{{ t }}</option>
-                            {% endfor %}
-                        </select>
-                        <small class="form-text text-muted">Applies immediately after saving. Theme folders live in <code>themes/</code>.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="settings-label">Site Title</label>
-                        <input type="text" class="form-control" name="site_title" value="{{ settings.site_title }}">
-                    </div>
-                    <div class="mb-3">
-                        <label class="settings-label">Site Description</label>
-                        <textarea class="form-control" name="site_description" rows="2">{{ settings.site_description }}</textarea>
-                    </div>
-                    <div class="row g-2">
-                        <div class="mb-3 col-md-6">
-                            <label class="settings-label">Favicon URL</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="favicon" id="faviconInput" value="{{ settings.favicon }}">
-                                <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('faviconInput')">Choose</button>
-                                    <label class="btn btn-outline-secondary mb-0">
-                                        Upload <input type="file" accept="image/*" style="display:none" onchange="uploadImage(this, 'faviconInput')">
-                                    </label>
-                            </div>
-                        </div>
-                        <div class="mb-3 col-md-6">
-                            <label class="settings-label">Logo URL</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="logo" id="logoInput" value="{{ settings.logo }}">
-                                <button class="btn btn-outline-secondary" type="button" onclick="openMediaModal('logoInput')">Choose</button>
-                                    <label class="btn btn-outline-secondary mb-0">
-                                        Upload <input type="file" accept="image/*" style="display:none" onchange="uploadImage(this, 'logoInput')">
-                                    </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h4>Important Pages</h4>
-                    <div class="row g-2">
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Homepage</label>
-                            <select class="form-select" name="homepage">
-                                {% for slug, page in pages.items() %}
-                                <option value="{{ slug }}" {% if settings.homepage == slug %}selected{% endif %}>{{ page.title }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Privacy Policy</label>
-                            <select class="form-select" name="privacy_page">
-                                <option value="">None</option>
-                                {% for slug, page in pages.items() %}
-                                <option value="{{ slug }}" {% if settings.privacy_page == slug %}selected{% endif %}>{{ page.title }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Terms & Conditions</label>
-                            <select class="form-select" name="terms_page">
-                                <option value="">None</option>
-                                {% for slug, page in pages.items() %}
-                                <option value="{{ slug }}" {% if settings.terms_page == slug %}selected{% endif %}>{{ page.title }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h4>Social Media Links</h4>
-                    <div class="row g-2">
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Facebook</label>
-                            <input type="url" class="form-control" name="social_links.facebook" value="{{ settings.social_links.facebook }}">
-                        </div>
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Twitter</label>
-                            <input type="url" class="form-control" name="social_links.twitter" value="{{ settings.social_links.twitter }}">
-                        </div>
-                        <div class="mb-3 col-md-4">
-                            <label class="settings-label">Instagram</label>
-                            <input type="url" class="form-control" name="social_links.instagram" value="{{ settings.social_links.instagram }}">
-                        </div>
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h4>Security</h4>
-                    <div class="mb-3">
-                        <div class="twofa-status">
-                            {% if settings.two_fa_enabled %}
-                                <span class="badge text-bg-success">2FA Enabled</span>
-                            {% else %}
-                                <span class="badge text-bg-secondary">2FA Disabled</span>
-                            {% endif %}
-                        </div>
-                        <div class="d-flex flex-wrap align-items-center mb-2">
-                            {% if settings.two_fa_enabled %}
-                                <a href="{{ url_for('auth.profile') }}" class="btn btn-danger btn-sm me-2 mb-2" onclick="return confirm('Are you sure you want to disable 2FA?')">Manage 2FA</a>
-                                <a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-warning btn-sm mb-2" onclick="return confirm('Are you sure you want to reset 2FA? This will require you to set up your authenticator app again.')">Reset 2FA</a>
-                            {% else %}
-                                <a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-success btn-sm mb-2">Enable 2FA</a>
-                            {% endif %}
-                        </div>
-                        <small class="form-text text-muted">
-                            {% if settings.two_fa_enabled %}
-                                Two-factor authentication is currently enabled for your account. You can disable or reset it below.
-                            {% else %}
-                                Enable two-factor authentication for additional security.
-                            {% endif %}
-                        </small>
-                    </div>
-                </div>
-
-
-                    <div class="mb-3">
-                        <label class="settings-label">Site Domain</label>
-                        <input type="url" class="form-control" name="site_domain" value="{{ settings.get('site_domain', '') }}" placeholder="https://www.example.com">
-                        <small>Enter the full public URL of your website (e.g., https://www.yourdomain.com). This is used for generating sitemaps and other absolute links.</small>
-                    </div>
-
-                <div class="settings-section">
-                    <h4>Analytics</h4>
-                    <div class="mb-3">
-                        <label class="settings-label">Custom Analytics Script</label>
-                        <textarea class="form-control" name="custom_analytics" rows="6" placeholder="Paste your analytics script here (e.g., Google Analytics, Plausible, etc.)">{{ settings.custom_analytics }}</textarea>
-                        <small>Paste your complete analytics tracking code here. It will be inserted in the header of your site.</small>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary">Save Settings</button>
-            </form>
-        </div>
-    </div>
+{% extends "_admin_layout.html" %}
+{% block title %}Site settings{% endblock %}
+{% block content %}
+{% set social = settings.social_links if settings.social_links is mapping else {} %}
+{% set cache_on = (settings.get('page_cache_enabled', 1)|string) != '0' %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-2">Site settings</h1>
+	<div class="mb-2">
+		<a href="/admin/tags-and-catagories" class="btn btn-outline-primary btn-sm me-2">Categories &amp; tags</a>
+		<a href="/admin/menu" class="btn btn-outline-primary btn-sm me-2">Navigation menu</a>
+		<a href="{{ url_for('features.settings_more') }}" class="btn btn-outline-primary btn-sm">Email, SEO &amp; comments</a>
+	</div>
 </div>
-<div class="modal fade" id="mediaModal" tabindex="-1" role="dialog" aria-labelledby="mediaModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="mediaModalLabel">Select Image</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="mediaGallery">
-        Loading...
-      </div>
-    </div>
-  </div>
-</div>
-    <script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-<script src="/static/bootstrap-and-related/bootstrap.bundle.min.js"></script>
+
+<div id="saveStatus" class="mb-3" role="status" aria-live="polite"></div>
+
+<form id="clearCacheForm" method="post" action="{{ url_for('admin.clear_cache') }}" class="d-none">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
+
+<form id="settingsForm" class="card card-body mb-4">
+	<section class="mb-4">
+		<h2 class="h5">General</h2>
+		<div class="row g-3">
+			<div class="col-md-6">
+				<label class="form-label" for="themeSelect">Theme</label>
+				<select class="form-select" id="themeSelect" name="theme">
+					{% for t in themes %}
+					<option value="{{ t }}" {{ 'selected' if t == settings.theme }}>{{ t }}</option>
+					{% endfor %}
+				</select>
+				<div class="form-text">Applies to every visitor as soon as you save. Theme folders live in <code>themes/</code>.</div>
+			</div>
+			<div class="col-md-6">
+				<label class="form-label" for="siteTitleInput">Site title</label>
+				<input type="text" class="form-control" id="siteTitleInput" name="site_title" value="{{ settings.site_title or '' }}">
+			</div>
+			<div class="col-12">
+				<label class="form-label" for="siteDescriptionInput">Site description</label>
+				<textarea class="form-control" id="siteDescriptionInput" name="site_description" rows="2">{{ settings.site_description or '' }}</textarea>
+			</div>
+		</div>
+	</section>
+
+	<section class="mb-4">
+		<h2 class="h5">Logo and favicon</h2>
+		<div class="row g-3">
+			<div class="col-md-6">
+				<label class="form-label" for="logoInput">Logo</label>
+				<div class="input-group mb-2">
+					<input type="text" class="form-control" name="logo" id="logoInput" value="{{ settings.logo or '' }}" aria-describedby="logoHelp">
+					<button class="btn btn-outline-secondary" type="button" id="logoChoose">Choose from gallery</button>
+					<label class="btn btn-outline-secondary mb-0">
+						Upload <input type="file" accept="image/*" class="d-none" data-target="logoInput" data-upload>
+					</label>
+				</div>
+				<div class="d-flex align-items-center gap-2">
+					<img id="logoPreview" src="{{ settings.logo }}" alt="" height="36" class="{{ '' if settings.logo else 'd-none' }}">
+					<button type="button" class="btn btn-sm btn-link text-danger p-0" data-clear="logoInput">Remove</button>
+				</div>
+				<div class="form-text" id="logoHelp">Shown in the site header.</div>
+			</div>
+			<div class="col-md-6">
+				<label class="form-label" for="faviconInput">Favicon</label>
+				<div class="input-group mb-2">
+					<input type="text" class="form-control" name="favicon" id="faviconInput" value="{{ settings.favicon or '' }}">
+					<button class="btn btn-outline-secondary" type="button" id="faviconChoose">Choose from gallery</button>
+					<label class="btn btn-outline-secondary mb-0">
+						Upload <input type="file" accept="image/*" class="d-none" data-target="faviconInput" data-upload>
+					</label>
+				</div>
+				<div class="d-flex align-items-center gap-2">
+					<img id="faviconPreview" src="{{ settings.favicon }}" alt="" height="24" class="{{ '' if settings.favicon else 'd-none' }}">
+					<button type="button" class="btn btn-sm btn-link text-danger p-0" data-clear="faviconInput">Remove</button>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="mb-4">
+		<h2 class="h5">Important pages</h2>
+		<div class="row g-3">
+			<div class="col-md-4">
+				<label class="form-label" for="homepageSelect">Homepage</label>
+				<select class="form-select" id="homepageSelect" name="homepage">
+					{% for slug, page in pages.items() %}
+					<option value="{{ slug }}" {% if settings.homepage == slug %}selected{% endif %}>{{ page.title }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="col-md-4">
+				<label class="form-label" for="privacySelect">Privacy policy</label>
+				<select class="form-select" id="privacySelect" name="privacy_page">
+					<option value="">None</option>
+					{% for slug, page in pages.items() %}
+					<option value="{{ slug }}" {% if settings.privacy_page == slug %}selected{% endif %}>{{ page.title }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="col-md-4">
+				<label class="form-label" for="termsSelect">Terms &amp; conditions</label>
+				<select class="form-select" id="termsSelect" name="terms_page">
+					<option value="">None</option>
+					{% for slug, page in pages.items() %}
+					<option value="{{ slug }}" {% if settings.terms_page == slug %}selected{% endif %}>{{ page.title }}</option>
+					{% endfor %}
+				</select>
+			</div>
+		</div>
+	</section>
+
+	<section class="mb-4">
+		<h2 class="h5">Social media links</h2>
+		<div class="row g-3">
+			<div class="col-md-4">
+				<label class="form-label" for="facebookInput">Facebook</label>
+				<input type="url" class="form-control" id="facebookInput" name="social_links.facebook" value="{{ social.get('facebook', '') }}">
+			</div>
+			<div class="col-md-4">
+				<label class="form-label" for="twitterInput">Twitter</label>
+				<input type="url" class="form-control" id="twitterInput" name="social_links.twitter" value="{{ social.get('twitter', '') }}">
+			</div>
+			<div class="col-md-4">
+				<label class="form-label" for="instagramInput">Instagram</label>
+				<input type="url" class="form-control" id="instagramInput" name="social_links.instagram" value="{{ social.get('instagram', '') }}">
+			</div>
+		</div>
+	</section>
+
+	<section class="mb-4">
+		<h2 class="h5">Site domain and analytics</h2>
+		<div class="mb-3">
+			<label class="form-label" for="siteDomainInput">Site domain</label>
+			<input type="url" class="form-control" id="siteDomainInput" name="site_domain" value="{{ settings.get('site_domain', '') }}" placeholder="https://www.example.com">
+			<div class="form-text">The full public address of your website. Used for sitemaps and other absolute links.</div>
+		</div>
+		<div>
+			<label class="form-label" for="analyticsInput">Custom analytics script</label>
+			<textarea class="form-control font-monospace" id="analyticsInput" name="custom_analytics" rows="5" placeholder="Paste your analytics tracking code here (Google Analytics, Plausible, etc.)">{{ settings.custom_analytics or '' }}</textarea>
+			<div class="form-text">Inserted in the header of every public page.</div>
+		</div>
+	</section>
+
+	<section class="mb-4" id="cache">
+		<h2 class="h5">Cache</h2>
+		<p class="small text-muted mb-3">
+			Public pages are stored after the first visit so the site loads faster. Saving a change clears the stored
+			pages automatically. Use <strong>Clear cache</strong> if a change still does not appear, for example a new
+			logo or a theme switch, and reload the page with Ctrl+Shift+R (Cmd+Shift+R on a Mac) to bypass your own browser cache.
+		</p>
+		<div class="row g-3 align-items-end">
+			<div class="col-md-4">
+				<label class="form-label" for="pageCacheSelect">Page cache</label>
+				<select class="form-select" id="pageCacheSelect" name="page_cache_enabled">
+					<option value="1" {{ 'selected' if cache_on }}>Enabled</option>
+					<option value="0" {{ '' if cache_on else 'selected' }}>Disabled</option>
+				</select>
+			</div>
+			<div class="col-md-4">
+				<label class="form-label" for="pageCacheTtl">Keep each page for (seconds)</label>
+				<input type="number" class="form-control" id="pageCacheTtl" name="page_cache_ttl" min="1" max="86400" step="1" value="{{ settings.get('page_cache_ttl') or 300 }}">
+				<div class="form-text">Between 1 and 86400 (one day). Shorter means changes show up sooner.</div>
+			</div>
+			<div class="col-md-4 text-md-end">
+				<button type="submit" class="btn btn-outline-danger" form="clearCacheForm" id="clearCacheBtn">Clear cache now</button>
+			</div>
+		</div>
+	</section>
+
+	<section class="mb-4">
+		<h2 class="h5">Security</h2>
+		<div class="d-flex flex-wrap align-items-center gap-2">
+			{% if settings.two_fa_enabled %}
+				<span class="badge text-bg-success">Two-factor authentication on</span>
+				<a href="{{ url_for('auth.profile') }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to disable 2FA?')">Manage 2FA</a>
+				<a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-outline-warning btn-sm" onclick="return confirm('Are you sure you want to reset 2FA? This will require you to set up your authenticator app again.')">Reset 2FA</a>
+			{% else %}
+				<span class="badge text-bg-secondary">Two-factor authentication off</span>
+				<a href="{{ url_for('auth.enable_2fa') }}" class="btn btn-outline-success btn-sm">Enable 2FA</a>
+			{% endif %}
+		</div>
+	</section>
+
+	<div class="text-end border-top pt-3">
+		<button type="submit" class="btn btn-primary" id="saveBtn">Save settings</button>
+	</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+{% include "_media_picker.html" %}
 <script>
-    async function callAPI(endpoint, method = 'GET', data = null) {
-        try {
-            const options = {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include'
-            };
-            if (data && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
-                options.body = JSON.stringify(data);
-            }
-            const response = await fetch(`/api/${endpoint}`, options);
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
-            return await response.json();
-        } catch (error) {
-            console.error('API call failed:', error);
-            alert('API request failed: ' + error.message);
-            return null;
-        }
-    }
-    $(document).ready(function() {
-        $('#settingsForm').on('submit', async function(e) {
-            e.preventDefault();
-            const formData = {};
-            $(this).serializeArray().forEach(item => {
-                if (item.name.includes('.')) {
-                    const [parent, child] = item.name.split('.');
-                    formData[parent] = formData[parent] || {};
-                    formData[parent][child] = item.value;
-                } else {
-                    formData[item.name] = item.value;
-                }
-            });
-            const response = await callAPI('settings', 'POST', formData);
-            if (response) {
-                alert('Settings saved successfully!');
-            }
-        });
-    });
-    function openMediaModal(targetInputId) {
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaModal')).show();
-        $('#mediaGallery').html('Loading...');
-        fetch('/admin/media?format=json')
-            .then(res => res.json())
-            .then(data => {
-                let html = '<div class="row">';
-                if (data && data.files && data.files.length) {
-                    data.files.forEach(file => {
-                        if (file.file.mime_type && file.file.mime_type.startsWith('image/')) {
-                            html += `<div class='col-md-3 mb-3'><img src='/uploads/${file.file.filename}' class='img-thumbnail' style='cursor:pointer' onclick='selectMediaImage("${targetInputId}", "/uploads/${file.file.filename}")'></div>`;
-                        }
-                    });
-                } else {
-                    html += '<div class="col-12">No images found.</div>';
-                }
-                html += '</div>';
-                $('#mediaGallery').html(html);
-            });
-    }
-    function selectMediaImage(inputId, url) {
-        $('#' + inputId).val(url);
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('mediaModal')).hide();
-    }
-    function uploadImage(input, targetInputId) {
-        const file = input.files[0];
-        if (!file) return;
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('csrf_token', '{{ csrf_token }}');
-        fetch('/upload_image', {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.location) {
-                $('#' + targetInputId).val(data.location);
-                alert('Image uploaded!');
-            } else {
-                alert('Upload failed: ' + (data.error || 'Unknown error'));
-            }
-        });
-    }
+(function ($) {
+	function status(message, ok) {
+		$('#saveStatus').html(
+			$('<div class="alert alert-dismissible fade show" role="alert"></div>')
+				.addClass(ok ? 'alert-success' : 'alert-danger')
+				.text(message)
+				.append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
+		);
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	function refreshPreview(input) {
+		var $img = $('#' + $(input).attr('id').replace('Input', 'Preview'));
+		var url = $(input).val();
+		$img.attr('src', url || '').toggleClass('d-none', !url);
+	}
+
+	// Save: every field goes to /api/settings. Names like social_links.facebook become nested values.
+	$('#settingsForm').on('submit', async function (e) {
+		e.preventDefault();
+		var $btn = $('#saveBtn').prop('disabled', true);
+		var ttl = parseInt($('#pageCacheTtl').val(), 10);
+		if (!(ttl >= 1 && ttl <= 86400)) {
+			$btn.prop('disabled', false);
+			status('Cache lifetime must be a number of seconds between 1 and 86400.', false);
+			return;
+		}
+		var data = {};
+		$(this).serializeArray().forEach(function (item) {
+			if (item.name.indexOf('.') !== -1) {
+				var parts = item.name.split('.');
+				data[parts[0]] = data[parts[0]] || {};
+				data[parts[0]][parts[1]] = item.value;
+			} else {
+				data[item.name] = item.value;
+			}
+		});
+		try {
+			var response = await fetch('/api/settings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify(data)
+			});
+			var result = await response.json().catch(function () { return {}; });
+			if (response.ok) {
+				status('Settings saved. Visitors see the changes on their next page load.', true);
+			} else {
+				status(result.message || 'Settings could not be saved (HTTP ' + response.status + ').', false);
+			}
+		} catch (err) {
+			status('Settings could not be saved: ' + err.message, false);
+		} finally {
+			$btn.prop('disabled', false);
+		}
+	});
+
+	// Gallery picker (shared with the editor and People screens).
+	$('#logoChoose').on('click', function () {
+		window.openMediaPicker(function (url) { $('#logoInput').val(url).trigger('change'); });
+	});
+	$('#faviconChoose').on('click', function () {
+		window.openMediaPicker(function (url) { $('#faviconInput').val(url).trigger('change'); });
+	});
+
+	$(document).on('click', '[data-clear]', function () {
+		$('#' + $(this).attr('data-clear')).val('').trigger('change');
+	});
+
+	$('#logoInput, #faviconInput').on('input change', function () { refreshPreview(this); });
+
+	// Upload: the file goes to /upload_image, and the returned address fills the field.
+	$(document).on('change', 'input[data-upload]', function () {
+		var file = this.files && this.files[0];
+		var target = $(this).attr('data-target');
+		if (!file) { return; }
+		var data = new FormData();
+		data.append('file', file);
+		data.append('csrf_token', window.FlexaAdmin ? window.FlexaAdmin.csrfToken : '');
+		fetch('/upload_image', { method: 'POST', body: data, credentials: 'same-origin' })
+			.then(function (r) { return r.json(); })
+			.then(function (res) {
+				if (res.location) {
+					$('#' + target).val(res.location).trigger('change');
+					status('Image uploaded. It is now selected; save to apply it.', true);
+				} else {
+					status('Upload failed: ' + (res.error || 'unknown error'), false);
+				}
+			})
+			.catch(function () { status('Upload failed. Check the file type and size.', false); });
+		this.value = '';
+	});
+})(window.jQuery);
 </script>
-</body>
-</html>
+{% endblock %}

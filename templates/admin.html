@@ -42,7 +42,10 @@
 	<li class="nav-item"><a class="nav-link {{ 'active' if post_page == 1 else '' }}" data-bs-toggle="tab" href="#pagesTab">Pages <span class="badge text-bg-light border">{{ pages|length }}</span></a></li>
 	{% endif %}
 	<li class="nav-item"><a class="nav-link {{ '' if (show_pages_tab and post_page == 1) else 'active' }}" data-bs-toggle="tab" href="#postsTab">Posts <span class="badge text-bg-light border">{{ posts|length }}</span></a></li>
-	<li class="nav-item ms-auto"><a class="nav-link" href="/admin/posts">Search, filter &amp; bulk edit all posts &rarr;</a></li>
+	<li class="nav-item ms-auto d-flex">
+		{% if show_pages_tab %}<a class="nav-link" href="/admin/pages">Search, filter &amp; bulk edit all pages &rarr;</a>{% endif %}
+		<a class="nav-link" href="/admin/posts">Search, filter &amp; bulk edit all posts &rarr;</a>
+	</li>
 </ul>
 
 <div class="tab-content">

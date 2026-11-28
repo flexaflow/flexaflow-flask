@@ -23,6 +23,7 @@ from flask import (
 	abort,
 	session,
 	make_response,
+	g,
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -59,6 +60,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 
 from data_store import Page, Post, Category, Tag, SiteSetting
+from data_store import get_site_setting_values, search_pages, bulk_update_pages
 import features
 import images
 import seo
@@ -699,7 +701,13 @@ def inject_globals():
 	data = {"year": datetime.datetime.now().year}
 	for name, func in theme_functions.items():
 		data[name] = func
-	data["settings"] = get_site_settings()
+	site = get_site_settings()
+	# Logo and favicon get a version suffix, so a new image shows at once instead of waiting for the browser cache.
+	version = getattr(g, "cache_version", "")
+	for key in ("logo", "favicon"):
+		site[key] = _with_version(site.get(key), version)
+	data["settings"] = site
+	data["cache_version"] = version
 	data["nav_sections"] = list_sections()
 	data["ext_admin_menus"] = extensions.admin_menus() if request and request.path.startswith(("/admin", "/page", "/post")) else []
 	return data
@@ -867,8 +875,62 @@ def clear_page_cache():
 		logger.exception("Could not clear the page cache")
 
 
+# Settings every worker must agree on. Each gunicorn worker is its own process with its own theme and
+# template loader, so a change saved by one worker is picked up by the others at their next request.
+_CACHE_SETTING_KEYS = ("theme", "cache_version", "page_cache_enabled", "page_cache_ttl")
+_runtime_seen = {"cache_version": None}
+
+
+def _cache_ttl(raw):
+	"""Seconds a public page stays cached. Empty or invalid falls back to CACHE_TIMEOUT; 0 turns the cache off."""
+	try:
+		return max(0, int(raw))
+	except (TypeError, ValueError):
+		return int(os.getenv("CACHE_TIMEOUT", "300"))
+
+
+def _with_version(url, version):
+	"""Adds ?v=<version> to a local image URL so a changed file is fetched again."""
+	if not url or not version or not isinstance(url, str):
+		return url
+	return f"{url}{'&' if '?' in url else '?'}v={version[:12]}"
+
+
+def _sync_runtime_state():
+	"""Before each request: apply the shared theme and cache settings to this worker, and note the cache options."""
+	if request.path.startswith(("/static/", "/uploads/")):
+		return
+	values = get_site_setting_values(_CACHE_SETTING_KEYS)
+	theme = values.get("theme") or ""
+	version = values.get("cache_version") or ""
+	ttl = _cache_ttl(values.get("page_cache_ttl"))
+	g.cache_ttl = ttl
+	g.cache_enabled = values.get("page_cache_enabled", "1") != "0" and ttl > 0
+	g.cache_version = version
+	if theme and theme != THEME_NAME and theme in available_themes():
+		apply_theme(theme)
+	if version != _runtime_seen["cache_version"]:
+		if _runtime_seen["cache_version"] is not None and THEME_NAME in available_themes():
+			apply_theme(THEME_NAME)  # reloads templates, theme functions and static files for this worker
+		_runtime_seen["cache_version"] = version
+
+
+def clear_site_cache():
+	"""Forget cached pages and compiled templates in every worker. Returns the new cache version."""
+	token = secrets.token_hex(8)
+	update_site_settings({"cache_version": token})
+	clear_page_cache()
+	app.jinja_env.cache.clear()
+	if THEME_NAME in available_themes():
+		apply_theme(THEME_NAME)
+	_runtime_seen["cache_version"] = token
+	g.cache_version = token
+	return token
+
+
 def _cacheable_request():
 	return (request.method == "GET" and app.config["CACHE_TYPE"] != "NullCache"
+	        and getattr(g, "cache_enabled", True)
 	        and app.config["SESSION_COOKIE_NAME"] not in request.cookies
 	        and not request.path.startswith(_NO_CACHE_PREFIXES) and len(request.args) <= 2)
 
@@ -906,7 +968,8 @@ def _page_cache_store(response):
 		      and response.mimetype == "text/html" and "Set-Cookie" not in response.headers
 		      and not session.modified and not session  # a page that touched the session (e.g. printed a CSRF token) is per-visitor
 		      and request.endpoint is not None and response.headers.get("X-Cache") != "HIT"):
-			cache.set(_cache_key(), {"body": response.get_data(), "status": 200, "type": response.headers["Content-Type"]})
+			cache.set(_cache_key(), {"body": response.get_data(), "status": 200, "type": response.headers["Content-Type"]},
+			          timeout=getattr(g, "cache_ttl", None))
 			response.headers["X-Cache"] = "MISS"
 			response.add_etag()
 			response.make_conditional(request)
@@ -1009,6 +1072,7 @@ _ext_state["booting"] = True
 _ext_sync()
 _ext_state["booting"] = False
 
+app.before_request(_sync_runtime_state)
 app.before_request(_ext_dispatch)
 app.before_request(_page_cache_lookup)
 

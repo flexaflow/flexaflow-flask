@@ -1,0 +1,127 @@
+{% extends "_admin_layout.html" %}
+{% block title %}Pages{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+	<h1 class="h4 mb-2">Pages <small class="text-muted">({{ result.total }})</small></h1>
+	<div class="mb-2">
+		<a class="btn btn-sm btn-outline-primary" href="/page/add">+ New plain page</a>
+	</div>
+</div>
+
+<form method="get" action="{{ url_for('admin.pages_list') }}" class="card card-body mb-3" id="filterForm" role="search">
+	<div class="row g-2">
+		<div class="col-md-4">
+			<label class="small text-muted mb-0" for="pq">Search</label>
+			<input type="search" class="form-control" id="pq" name="q" value="{{ filters.q }}" placeholder="Title, address, description or text…" autofocus>
+		</div>
+		<div class="col-md-2">
+			<label class="small text-muted mb-0" for="pstatus">Status</label>
+			<select class="form-select" id="pstatus" name="status">
+				<option value="">Any</option>
+				{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ s|capitalize }}</option>{% endfor %}
+			</select>
+		</div>
+		<div class="col-md-3">
+			<label class="small text-muted mb-0" for="ptemplate">Template</label>
+			<select class="form-select" id="ptemplate" name="template">
+				<option value="">Any</option>
+				{% for key, t in page_templates.items() %}<option value="{{ key }}" {{ 'selected' if filters.template == key }}>{{ t.label or key }}</option>{% endfor %}
+			</select>
+		</div>
+		<div class="col-md-3">
+			<label class="small text-muted mb-0" for="psort">Sort by</label>
+			<select class="form-select" id="psort" name="sort">
+				{% for key, (label, _) in sorts.items() %}<option value="{{ key }}" {{ 'selected' if (filters.sort or 'title') == key }}>{{ label }}</option>{% endfor %}
+			</select>
+		</div>
+	</div>
+	<div class="mt-3 text-md-end">
+		<button class="btn btn-primary" type="submit">Search</button>
+		<a class="btn btn-outline-secondary" href="{{ url_for('admin.pages_list') }}">Clear</a>
+	</div>
+</form>
+
+<form method="post" action="{{ url_for('admin.pages_bulk') }}" id="bulkForm">
+	<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	<input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+	<div class="d-flex flex-wrap align-items-center mb-2" id="bulkBar">
+		<select class="form-select form-select-sm w-auto me-2 mb-1" name="action" id="bulkAction" aria-label="Bulk action">
+			<option value="">Bulk action…</option>
+			<option value="publish">Publish</option>
+			<option value="draft">Move to draft</option>
+			<option value="delete">Delete</option>
+		</select>
+		<button class="btn btn-sm btn-outline-primary mb-1" type="submit" id="bulkApply" disabled>Apply to <span id="selCount">0</span> selected</button>
+		<span class="small text-muted ms-auto mb-1" id="selHint">Tick pages to select them, or use the box in the header to select every page on this screen.</span>
+	</div>
+
+	<div class="card"><div class="card-body p-0"><div class="table-responsive">
+		<table class="table table-hover mb-0 align-middle">
+			<thead class="table-light"><tr>
+				<th style="width:36px"><input type="checkbox" class="form-check-input" id="selectAll" aria-label="Select all pages on this screen"></th>
+				<th>Title</th><th>Address</th><th>Template</th><th>Status</th><th>Updated</th><th></th>
+			</tr></thead>
+			<tbody>
+			{% for p in result.records %}
+				<tr>
+					<td><input type="checkbox" class="form-check-input row-check" name="ids" value="{{ p.id }}" aria-label="Select {{ p.title }}"></td>
+					<td><a href="{{ url_for('editor.edit_page', slug=p.slug) }}"><strong>{{ p.title }}</strong></a></td>
+					<td><code>{{ p.public_url if p.status == 'published' else '/' ~ p.slug }}</code></td>
+					<td class="small">{{ page_templates[p.template].label if p.template in page_templates else 'Default page' }}</td>
+					<td>
+						{% set badge = {'published': 'success', 'draft': 'warning', 'scheduled': 'info'} %}
+						<span class="badge text-bg-{{ badge.get(p.status, 'secondary') }}">{{ (p.status or 'draft')|capitalize }}{% if p.status == 'scheduled' and p.publish_at %} · {{ p.publish_at[:16]|replace('T', ' ') }}{% endif %}</span>
+					</td>
+					<td class="small text-muted text-nowrap">{{ (p.updated_at or '')[:10] }}</td>
+					<td class="text-end text-nowrap">
+						<a href="{{ url_for('editor.edit_page', slug=p.slug) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+						<a href="/page/preview/{{ p.slug }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Preview</a>
+						{% if p.status == 'published' %}<a href="{{ p.public_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>{% endif %}
+					</td>
+				</tr>
+			{% else %}
+				<tr><td colspan="7" class="text-center text-muted py-5">No pages match. <a href="{{ url_for('admin.pages_list') }}">Clear the filters</a>.</td></tr>
+			{% endfor %}
+			</tbody>
+		</table>
+	</div></div></div>
+</form>
+
+{% if result.pages > 1 %}
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Pages">
+	{% set base = url_for('admin.pages_list') ~ '?' ~ (query_string ~ '&' if query_string else '') %}
+	{% if result.page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ base }}page={{ result.page - 1 }}">&larr; Previous</a>{% else %}<span></span>{% endif %}
+	<span class="small text-muted">Page {{ result.page }} of {{ result.pages }}</span>
+	{% if result.page < result.pages %}<a class="btn btn-sm btn-outline-secondary" href="{{ base }}page={{ result.page + 1 }}">Next &rarr;</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function ($) {
+	function refresh() {
+		var n = $('.row-check:checked').length;
+		var action = $('#bulkAction').val();
+		$('#selCount').text(n);
+		$('#bulkApply').prop('disabled', !(n && action));
+		$('#selectAll').prop('checked', n > 0 && n === $('.row-check').length);
+	}
+	$('#selectAll').on('change', function () {
+		$('.row-check').prop('checked', this.checked);
+		refresh();
+	});
+	$(document).on('change', '.row-check, #bulkAction', refresh);
+	$('#bulkForm').on('submit', function (e) {
+		var action = $('#bulkAction').val();
+		var n = $('.row-check:checked').length;
+		if (action === 'delete' && !confirm('Permanently delete ' + n + ' page(s)? This cannot be undone.')) {
+			e.preventDefault();
+		}
+	});
+	// Selects in the search form submit straight away, as on the posts list.
+	$('#filterForm select').on('change', function () { $('#filterForm').trigger('submit'); });
+	refresh();
+})(window.jQuery);
+</script>
+{% endblock %}

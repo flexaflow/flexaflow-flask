@@ -1518,6 +1518,91 @@ def delete_page(slug: str) -> bool:
 		db.close()
 
 
+PAGE_STATUSES = ("published", "draft", "scheduled")
+PAGE_SORTS = {
+	"title": ("Title A–Z", lambda: (Page.title.asc(),)),
+	"address": ("Address A–Z", lambda: (Page.slug.asc(),)),
+	"updated": ("Recently updated", lambda: (Page.updated_at.desc(),)),
+}
+ADMIN_PAGE_LIST_SIZE = 20
+
+
+def search_pages(q: str = "", status: str = "", template: str = "", sort: str = "title",
+                 page: Any = 1, per_page: int = ADMIN_PAGE_LIST_SIZE) -> Dict[str, Any]:
+	"""Pages for the admin list: search by title, address, description or content; filter by status and template."""
+	from sqlalchemy import or_
+	db = db_manager.get_session()
+	try:
+		query = db.query(Page)
+		term = (q or "").strip()
+		if term:
+			like = f"%{term}%"
+			query = query.filter(or_(Page.title.ilike(like), Page.slug.ilike(like),
+			                         Page.description.ilike(like), Page.content.ilike(like)))
+		if status in PAGE_STATUSES:
+			query = query.filter(Page.status == status)
+		if template:
+			query = query.filter(Page.template == template)
+		total = query.count()
+		pages = max(1, (total + per_page - 1) // per_page)
+		try:
+			page = max(1, min(int(page), pages))
+		except (TypeError, ValueError):
+			page = 1
+		order = PAGE_SORTS.get(sort, PAGE_SORTS["title"])[1]()
+		rows = query.order_by(*order).offset((page - 1) * per_page).limit(per_page).all()
+		records = []
+		for row in rows:
+			data = row.to_dict()
+			data["public_url"] = f"/{row.slug}"
+			records.append(data)
+		return {"records": records, "total": total, "page": page, "pages": pages, "per_page": per_page}
+	except SQLAlchemyError as e:
+		logger.error(f"Error searching pages: {str(e)}")
+		return {"records": [], "total": 0, "page": 1, "pages": 1, "per_page": per_page}
+	finally:
+		db.close()
+
+
+def bulk_update_pages(action: str, ids: List[int]) -> int:
+	"""Apply publish | draft | delete to the given page ids. Returns how many pages changed."""
+	changed = 0
+	db = db_manager.get_session()
+	try:
+		for page in db.query(Page).filter(Page.id.in_(ids)).all():
+			if action == "publish":
+				page.status = "published"
+				page.publish_at = None
+			elif action == "draft":
+				page.status = "draft"
+			elif action == "delete":
+				db.delete(page)
+			else:
+				continue
+			changed += 1
+		db.commit()
+		return changed
+	except SQLAlchemyError as e:
+		db.rollback()
+		logger.error(f"Bulk page update failed: {str(e)}")
+		return 0
+	finally:
+		db.close()
+
+
+def get_site_setting_values(keys) -> Dict[str, str]:
+	"""Stored (raw) values for a few settings. Much cheaper than get_site_settings(), so it can run on every request."""
+	db = db_manager.get_session()
+	try:
+		rows = db.query(SiteSetting).filter(SiteSetting.key.in_(list(keys))).all()
+		return {row.key: row.value for row in rows}
+	except SQLAlchemyError as e:
+		logger.error(f"Error reading site setting values: {str(e)}")
+		return {}
+	finally:
+		db.close()
+
+
 def add_post(slug: str, post_data: Dict[str, Any]) -> bool:
 	"""Add a new post"""
 	db = db_manager.get_session()

@@ -89,6 +89,55 @@ def settings():
 	)
 
 
+@bp.route("/admin/settings/clear-cache", methods=["POST"])
+@capability_required("manage_settings")
+def clear_cache():
+	"""The 'Clear cache' button: forgets cached public pages and compiled templates in every worker."""
+	from auth import log_event
+	clear_site_cache()
+	log_event("cache_cleared")
+	flash("Cache cleared. Public pages, templates and images are reloaded on the next visit.", "success")
+	return redirect(url_for("admin.settings") + "#cache")
+
+
+@bp.route("/admin/pages")
+@capability_required("manage_pages")
+def pages_list():
+	"""All pages (published, draft and scheduled) with search, status and template filters, sorting and bulk actions."""
+	from data_store import PAGE_SORTS, PAGE_STATUSES
+	args = request.args
+	result = search_pages(
+		q=args.get("q", ""), status=args.get("status", ""), template=args.get("template", ""),
+		sort=args.get("sort", "title"), page=args.get("page", 1),
+	)
+	filters = {k: args.get(k, "") for k in ("q", "status", "template", "sort")}
+	query_string = urlencode({k: v for k, v in args.items() if k != "page" and v})
+	return render_template(
+		"pages.html", result=result, filters=filters, sorts=PAGE_SORTS, statuses=PAGE_STATUSES,
+		query_string=query_string,
+	)
+
+
+@bp.route("/admin/pages/bulk", methods=["POST"])
+@capability_required("manage_pages")
+def pages_bulk():
+	"""Publish, move to draft or delete the selected pages."""
+	action = request.form.get("action", "")
+	ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
+	back = request.form.get("back") or "/admin/pages"
+	if not back.startswith("/admin/pages"):
+		back = "/admin/pages"
+	if not ids or action not in ("publish", "draft", "delete"):
+		flash("Select at least one page and choose an action.", "error")
+		return redirect(back)
+	changed = bulk_update_pages(action, ids)
+	if changed:
+		generate_and_store_sitemap()
+	verb = {"publish": "published", "draft": "moved to draft", "delete": "deleted"}[action]
+	flash(f"{changed} page(s) {verb}." if changed else "No pages were changed.", "success" if changed else "error")
+	return redirect(back)
+
+
 @bp.route("/admin/menu")
 @capability_required("manage_settings")
 def menu_editor():

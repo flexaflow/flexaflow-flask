@@ -8,9 +8,9 @@
 	<title>{% block title %}Admin{% endblock %} · FlexaFlow</title>
 	<link rel="icon" type="image/x-icon" href="/static/flexaflow.ico">
 	<link rel="stylesheet" href="/static/bootstrap-and-related/bootstrap.min.css">
-	<link rel="stylesheet" href="/static/admin/admin.css">
+	<link rel="stylesheet" href="/static/admin/admin.css?v={{ cache_version }}">
 	<script src="/static/bootstrap-and-related/jquery-3.7.1.min.js"></script>
-	<script src="/static/admin/admin.js"></script>
+	<script src="/static/admin/admin.js?v={{ cache_version }}"></script>
 	{% block head %}{% endblock %}
 </head>
 <body class="admin-body">
@@ -45,7 +45,7 @@
 						<li class="nav-item dropdown">
 							<a class="nav-link dropdown-toggle" href="#" id="pagesMenu" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Pages</a>
 							<div class="dropdown-menu" aria-labelledby="pagesMenu">
-								<a class="dropdown-item" href="/admin">All pages</a>
+								<a class="dropdown-item" href="/admin/pages">Search &amp; bulk edit pages</a>
 								<div class="dropdown-divider"></div>
 								{% for key, t in page_templates.items() if key != 'default' %}
 								<a class="dropdown-item" href="/page/add?template={{ key }}">+ New {{ (t.label or key)|lower }}</a>
